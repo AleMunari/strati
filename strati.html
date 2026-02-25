@@ -1,0 +1,1309 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>STRATI</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #0c0b09;
+    --paper: #13120e;
+    --gold: #c9a84c;
+    --gold-dim: #6b5a2a;
+    --text: #d4cfc0;
+    --muted: #5a5548;
+    --red: #8b2020;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content:'';
+    position:fixed; inset:0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+    pointer-events:none; z-index:1000; opacity:0.5;
+  }
+
+  body::after {
+    content:'';
+    position:fixed; inset:0;
+    background: radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,0.9) 100%);
+    pointer-events:none; z-index:999;
+  }
+
+  /* ══ SPLASH ══ */
+  #splash {
+    position:fixed; inset:0; background:#000;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    z-index:2000; transition:opacity 2s ease; padding:2rem;
+    overflow-y: auto;
+  }
+  #splash.hidden { opacity:0; pointer-events:none; }
+
+  .s-eyebrow {
+    font-size:0.55rem; letter-spacing:0.5em;
+    color:var(--gold-dim); text-transform:uppercase; margin-bottom:1rem;
+  }
+  .s-title {
+    font-family:'Playfair Display',serif;
+    font-size:clamp(4rem,18vw,9rem); font-weight:400;
+    letter-spacing:0.15em; color:#fff; line-height:1;
+    text-shadow:0 0 80px rgba(201,168,76,0.3);
+    animation:title-breathe 4s ease-in-out infinite;
+  }
+  @keyframes title-breathe {
+    0%,100%{text-shadow:0 0 80px rgba(201,168,76,0.3);}
+    50%{text-shadow:0 0 120px rgba(201,168,76,0.5),0 0 200px rgba(201,168,76,0.15);}
+  }
+  .s-sub {
+    font-size:0.68rem; letter-spacing:0.25em;
+    color:var(--muted); margin-top:0.8rem; text-transform:uppercase;
+  }
+  .s-divider { width:60px; height:1px; background:var(--gold-dim); margin:2rem auto; }
+  .s-desc {
+    font-size:0.72rem; color:var(--muted); line-height:2;
+    text-align:center; max-width:300px; letter-spacing:0.05em;
+  }
+  .s-desc em { color:var(--text); font-style:normal; }
+
+  .key-block { margin-top:1.8rem; width:100%; max-width:320px; }
+  .key-block + .key-block { margin-top:1.2rem; }
+
+  .key-lbl {
+    font-size:0.55rem; letter-spacing:0.3em; color:var(--muted);
+    text-transform:uppercase; display:block; margin-bottom:0.5rem;
+  }
+  .key-row { display:flex; gap:0.5rem; }
+  .key-inp {
+    flex:1; background:#0a0a08; border:1px solid #2a2820;
+    color:var(--text); font-family:'IBM Plex Mono',monospace;
+    font-size:0.68rem; padding:0.55rem 0.8rem; outline:none; transition:border-color 0.3s;
+  }
+  .key-inp:focus { border-color:var(--gold-dim); }
+  .key-btn {
+    padding:0.55rem 1rem; background:transparent;
+    border:1px solid var(--gold-dim); color:var(--text);
+    font-family:'IBM Plex Mono',monospace; font-size:0.6rem;
+    letter-spacing:0.1em; cursor:pointer; transition:all 0.3s; white-space:nowrap;
+  }
+  .key-btn:hover { background:var(--gold-dim); }
+  .key-st {
+    margin-top:0.4rem; font-size:0.55rem; color:var(--muted);
+    letter-spacing:0.1em; min-height:0.9rem;
+  }
+  .key-st.ok { color:#5a8a5a; }
+  .key-st.err { color:var(--red); }
+  .key-st.req { color:var(--gold-dim); }
+
+  .start-btn {
+    margin-top:2.5rem; padding:1rem 3.5rem; background:transparent;
+    border:1px solid var(--gold-dim); color:var(--gold);
+    font-family:'IBM Plex Mono',monospace; font-size:0.78rem;
+    letter-spacing:0.4em; text-transform:uppercase; cursor:pointer;
+    transition:all 0.4s; position:relative; overflow:hidden;
+  }
+  .start-btn::before {
+    content:''; position:absolute; inset:0; background:var(--gold-dim);
+    transform:scaleX(0); transform-origin:left; transition:transform 0.4s; z-index:-1;
+  }
+  .start-btn:hover::before { transform:scaleX(1); }
+  .start-btn:hover { color:#fff; border-color:transparent; }
+
+  .s-warning {
+    margin-top:1.5rem; font-size:0.58rem; color:#2a2820;
+    letter-spacing:0.1em; text-align:center; line-height:1.9;
+    padding-bottom: 2rem;
+  }
+
+  /* ══ APP ══ */
+  #app { display:none; flex-direction:column; min-height:100dvh; }
+  #app.visible { display:flex; }
+
+  header {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:1rem 1.5rem; border-bottom:1px solid #1e1c18;
+    position:sticky; top:0;
+    background:rgba(12,11,9,0.96); backdrop-filter:blur(12px); z-index:100;
+  }
+  .app-title {
+    font-family:'Playfair Display',serif; font-size:1.3rem;
+    letter-spacing:0.2em; color:var(--gold); font-weight:400;
+  }
+  .hdr-right { display:flex; align-items:center; gap:1rem; font-size:0.58rem; letter-spacing:0.2em; color:var(--muted); }
+
+  .gps-dot { width:5px; height:5px; border-radius:50%; background:#2a2820; display:inline-block; margin-right:0.3rem; }
+  .gps-dot.lock {
+    background:var(--gold); box-shadow:0 0 6px rgba(201,168,76,0.6);
+    animation:gps-pulse 2s ease-in-out infinite;
+  }
+  @keyframes gps-pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
+
+  #panic-btn {
+    padding:0.35rem 0.8rem; background:transparent; border:1px solid #2a2820;
+    color:var(--muted); font-family:'IBM Plex Mono',monospace;
+    font-size:0.58rem; letter-spacing:0.2em; text-transform:uppercase; cursor:pointer; transition:all 0.3s;
+  }
+  #panic-btn:hover { border-color:var(--red); color:var(--red); }
+
+  .coord-strip {
+    padding:0.5rem 1.5rem; border-bottom:1px solid #131210;
+    display:flex; justify-content:space-between; align-items:center;
+    font-size:0.58rem; letter-spacing:0.15em; color:#2a2820;
+  }
+  .coord-strip span { color:var(--muted); }
+
+  .stats-row {
+    display:flex; justify-content:space-around;
+    padding:0.9rem 1.5rem; border-bottom:1px solid #131210;
+  }
+  .stat { text-align:center; }
+  .stat-val {
+    font-family:'Playfair Display',serif; font-size:1.2rem;
+    color:var(--gold); display:block; line-height:1.2; font-style:italic;
+  }
+  .stat-lbl { font-size:0.52rem; letter-spacing:0.25em; color:var(--muted); text-transform:uppercase; }
+
+  .epoch-bar {
+    padding:0.7rem 1.5rem; border-bottom:1px solid #131210;
+    display:flex; align-items:center; gap:1rem;
+  }
+  .epoch-label { font-size:0.55rem; letter-spacing:0.3em; color:var(--muted); text-transform:uppercase; white-space:nowrap; }
+  .epoch-value { font-family:'Playfair Display',serif; font-size:0.9rem; color:var(--gold); font-style:italic; }
+  .epoch-bar::after { content:''; flex:1; height:1px; background:#1a1810; }
+
+  .search-status {
+    padding:0.6rem 1.5rem; border-bottom:1px solid #0f0e0c;
+    font-size:0.58rem; color:var(--muted); letter-spacing:0.15em;
+    display:flex; align-items:center; gap:0.5rem; min-height:2rem;
+  }
+  .search-dot { width:4px; height:4px; border-radius:50%; background:var(--gold); opacity:0; }
+  .search-dot.on { animation:sdot 0.8s ease-in-out infinite; }
+  @keyframes sdot{0%,100%{opacity:0.2;}50%{opacity:1;}}
+
+  .progress-wrap { padding:0.6rem 1.5rem; border-bottom:1px solid #0f0e0c; }
+  .progress-top {
+    display:flex; justify-content:space-between;
+    font-size:0.52rem; letter-spacing:0.2em; color:var(--muted); text-transform:uppercase; margin-bottom:0.4rem;
+  }
+  .progress-bar { height:1px; background:#1a1810; }
+  .progress-fill {
+    height:100%; background:linear-gradient(90deg,var(--gold-dim),var(--gold));
+    width:0%; transition:width 1s ease;
+  }
+
+  .story-wrap { flex:1; padding:1.5rem; }
+
+  .frag-header { display:flex; align-items:flex-start; gap:1rem; margin-bottom:1.2rem; }
+  .frag-num-box {
+    font-family:'Playfair Display',serif; font-size:2rem;
+    color:var(--gold-dim); font-style:italic; line-height:1; flex-shrink:0;
+  }
+  .frag-meta-col { flex:1; }
+  .frag-place { font-family:'Playfair Display',serif; font-size:0.95rem; color:var(--gold); font-style:italic; margin-bottom:0.2rem; }
+  .frag-coords-lbl { font-size:0.52rem; letter-spacing:0.15em; color:var(--muted); }
+
+  .gen-wrap { display:none; align-items:center; gap:0.6rem; margin-bottom:1rem; font-size:0.6rem; letter-spacing:0.2em; color:var(--muted); }
+  .gen-wrap.on { display:flex; }
+  .gen-d { width:3px; height:3px; border-radius:50%; background:var(--gold); animation:gdot 1s ease-in-out infinite; }
+  .gen-d:nth-child(2){animation-delay:0.25s;} .gen-d:nth-child(3){animation-delay:0.5s;}
+  @keyframes gdot{0%,100%{opacity:0.15;}50%{opacity:1;}}
+
+  .story-text { font-size:0.92rem; line-height:2.1; color:var(--text); min-height:80px; }
+
+  .cursor-blink {
+    display:inline-block; width:7px; height:1em;
+    background:var(--text); vertical-align:text-bottom;
+    animation:blink 1s step-end infinite; margin-left:1px;
+  }
+  @keyframes blink{0%,100%{opacity:1;}50%{opacity:0;}}
+
+  .sources-wrap { margin-top:1rem; padding-top:0.8rem; border-top:1px solid #1a1810; display:none; }
+  .sources-wrap.on { display:block; }
+  .sources-lbl { font-size:0.5rem; letter-spacing:0.3em; color:var(--muted); text-transform:uppercase; margin-bottom:0.5rem; }
+  .source-tag {
+    display:inline-block; font-size:0.58rem; letter-spacing:0.08em;
+    color:var(--gold-dim); border:1px solid #2a2418;
+    padding:0.2rem 0.5rem; margin:0.2rem 0.2rem 0.2rem 0;
+    cursor:pointer; transition:color 0.2s; text-decoration:none;
+  }
+  .source-tag:hover { color:var(--gold); }
+
+  .audio-btn {
+    margin-top:1.5rem; width:100%; padding:0.85rem; background:transparent;
+    border:1px solid #1e1c18; color:var(--muted);
+    font-family:'IBM Plex Mono',monospace; font-size:0.68rem;
+    letter-spacing:0.2em; text-transform:uppercase; cursor:pointer; transition:all 0.3s;
+    display:flex; align-items:center; justify-content:center; gap:0.5rem;
+  }
+  .audio-btn:hover { border-color:var(--gold-dim); color:var(--text); }
+  .audio-btn.speaking { border-color:var(--gold); color:var(--gold); animation:ab-pulse 2s ease-in-out infinite; }
+  .audio-btn.loading { color:#2a2820; border-color:#1e1c18; }
+  @keyframes ab-pulse{0%,100%{box-shadow:0 0 0 0 rgba(201,168,76,0);}50%{box-shadow:0 0 0 6px rgba(201,168,76,0.06);}}
+
+  .history-wrap { padding:0 1.5rem 3rem; border-top:1px solid #0f0e0c; }
+  .hist-lbl { font-size:0.5rem; letter-spacing:0.35em; color:#1e1c18; text-transform:uppercase; padding:1rem 0 0.8rem; }
+  .hist-item {
+    padding:0.8rem 0 0.8rem 1rem; border-left:1px solid #1e1c18;
+    margin-bottom:0.8rem; cursor:pointer; transition:border-color 0.3s;
+  }
+  .hist-item:hover { border-left-color:var(--gold-dim); }
+  .hist-place { font-family:'Playfair Display',serif; font-size:0.78rem; color:var(--gold-dim); font-style:italic; margin-bottom:0.2rem; }
+  .hist-epoch { font-size:0.5rem; letter-spacing:0.2em; color:#2a2820; margin-bottom:0.3rem; }
+  .hist-preview { font-size:0.68rem; color:#2a2820; line-height:1.6; }
+
+  #flash { position:fixed; inset:0; background:rgba(201,168,76,0.03); pointer-events:none; z-index:998; opacity:0; transition:opacity 0.08s; }
+  #flash.on { opacity:1; }
+
+  #panic-overlay { display:none; position:fixed; inset:0; background:#fff; z-index:9999; flex-direction:column; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; }
+  #panic-overlay.visible { display:flex; }
+  .panic-t { color:#333; font-size:1rem; letter-spacing:0.1em; }
+  .panic-s { color:#999; font-size:0.72rem; margin-top:0.5rem; }
+  .resume-btn { margin-top:2rem; padding:0.8rem 2rem; background:#333; border:none; color:#fff; font-family:'IBM Plex Mono',monospace; font-size:0.78rem; letter-spacing:0.2em; cursor:pointer; }
+
+  .nline { position:fixed; left:0; right:0; height:1px; background:rgba(201,168,76,0.15); pointer-events:none; z-index:997; opacity:0; animation:nline 14s linear infinite; }
+  @keyframes nline{0%{top:-1px;opacity:0;}2%{opacity:0.15;}98%{opacity:0.04;}100%{top:100vh;opacity:0;}}
+
+  /* ══ MAPPA ══ */
+  .map-section {
+    border-top: 1px solid #131210;
+    padding: 0.7rem 1.5rem;
+  }
+  .map-toggle-btn {
+    width: 100%; padding: 0.6rem; background: transparent;
+    border: 1px solid #1e1c18; color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem;
+    letter-spacing: 0.2em; text-transform: uppercase; cursor: pointer;
+    transition: all 0.3s; display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  }
+  .map-toggle-btn:hover { border-color: var(--gold-dim); color: var(--text); }
+  .map-toggle-btn.active { border-color: var(--gold-dim); color: var(--gold); }
+  #map-container {
+    display: none; height: 220px; margin-top: 0.7rem;
+    border: 1px solid #1e1c18; position: relative; overflow: hidden;
+  }
+  #map-container.visible { display: block; }
+  #map { width: 100%; height: 100%; }
+  .leaflet-container { background: #0c0b09 !important; }
+  .leaflet-tile { filter: invert(1) hue-rotate(180deg) saturate(0.4) brightness(0.6); }
+
+  /* ══ CACHE BADGE ══ */
+  .cache-badge {
+    font-size: 0.48rem; letter-spacing: 0.2em; color: #3a5a3a;
+    padding: 0.15rem 0.4rem; border: 1px solid #1a2a1a;
+    display: inline-block; margin-left: 0.5rem; vertical-align: middle;
+    text-transform: uppercase;
+  }
+
+  /* ══ END SESSION ══ */
+  #end-overlay {
+    display: none; position: fixed; inset: 0; background: var(--bg);
+    z-index: 5000; overflow-y: auto; padding: 2rem 1.5rem 4rem;
+  }
+  #end-overlay.visible { display: block; }
+  .end-header {
+    text-align: center; padding: 2rem 0 1.5rem;
+    border-bottom: 1px solid #1e1c18; margin-bottom: 2rem;
+  }
+  .end-eyebrow { font-size: 0.5rem; letter-spacing: 0.5em; color: var(--muted); text-transform: uppercase; margin-bottom: 0.8rem; }
+  .end-title {
+    font-family: 'Playfair Display', serif; font-size: clamp(2.5rem, 12vw, 5rem);
+    color: var(--gold); font-weight: 400; font-style: italic; letter-spacing: 0.1em;
+    text-shadow: 0 0 60px rgba(201,168,76,0.3);
+  }
+  .end-sub { font-size: 0.62rem; letter-spacing: 0.2em; color: var(--muted); margin-top: 0.6rem; text-transform: uppercase; }
+  .end-stats {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+    background: #1a1810; border: 1px solid #1a1810; margin-bottom: 2rem;
+  }
+  .end-stat {
+    background: var(--paper); padding: 1.2rem; text-align: center;
+  }
+  .end-stat-val {
+    font-family: 'Playfair Display', serif; font-size: 1.8rem;
+    color: var(--gold); display: block; font-style: italic; line-height: 1;
+  }
+  .end-stat-lbl { font-size: 0.5rem; letter-spacing: 0.25em; color: var(--muted); text-transform: uppercase; margin-top: 0.3rem; display: block; }
+  .end-epochs {
+    margin-bottom: 2rem; padding: 1rem; border: 1px solid #1e1c18;
+  }
+  .end-epochs-lbl { font-size: 0.5rem; letter-spacing: 0.3em; color: var(--muted); text-transform: uppercase; margin-bottom: 0.8rem; }
+  .epoch-pill {
+    display: inline-block; font-size: 0.6rem; letter-spacing: 0.1em;
+    color: var(--gold-dim); border: 1px solid #2a2418;
+    padding: 0.3rem 0.6rem; margin: 0.2rem;
+  }
+  .end-log { margin-bottom: 2rem; }
+  .end-log-lbl { font-size: 0.5rem; letter-spacing: 0.35em; color: var(--muted); text-transform: uppercase; margin-bottom: 1rem; }
+  .end-log-item {
+    padding: 0.8rem 0 0.8rem 1rem; border-left: 1px solid #1e1c18;
+    margin-bottom: 0.6rem;
+  }
+  .end-log-place { font-family: 'Playfair Display', serif; font-size: 0.85rem; color: var(--gold); font-style: italic; }
+  .end-log-epoch { font-size: 0.48rem; letter-spacing: 0.2em; color: var(--muted); margin: 0.2rem 0; }
+  .end-log-text { font-size: 0.65rem; color: var(--muted); line-height: 1.7; margin-top: 0.4rem; }
+  .end-actions { display: flex; flex-direction: column; gap: 0.8rem; }
+  .end-btn {
+    width: 100%; padding: 0.9rem; background: transparent;
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem;
+    letter-spacing: 0.25em; text-transform: uppercase; cursor: pointer; transition: all 0.3s;
+  }
+  .end-btn-primary { border: 1px solid var(--gold-dim); color: var(--gold); }
+  .end-btn-primary:hover { background: var(--gold-dim); color: #fff; }
+  .end-btn-secondary { border: 1px solid #1e1c18; color: var(--muted); }
+  .end-btn-secondary:hover { border-color: #2a2820; color: var(--text); }
+  .end-map { height: 180px; border: 1px solid #1e1c18; margin-bottom: 2rem; }
+  #end-map { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+
+<div class="nline"></div>
+
+<!-- SPLASH -->
+<div id="splash">
+  <div class="s-eyebrow">Una camminata nella memoria</div>
+  <div class="s-title">STRATI</div>
+  <div class="s-sub">Storia viva sotto i tuoi piedi</div>
+  <div class="s-divider"></div>
+  <div class="s-desc">
+    Cammini. Il GPS ti localizza.<br>
+    L'AI cerca cosa è successo <em>esattamente lì</em>.<br>
+    Dall'antichità alla cronaca di ieri.
+  </div>
+
+  <!-- GROQ KEY — OBBLIGATORIA -->
+  <div class="key-block">
+    <span class="key-lbl">✦ Groq API Key — necessaria per la narrazione</span>
+    <div class="key-row">
+      <input class="key-inp" id="gem-key" type="password" placeholder="Incolla la tua Groq key...">
+      <button class="key-btn" onclick="testOpenAI()">Verifica</button>
+    </div>
+    <div class="key-st req" id="gem-st">→ Ottienila gratis su console.groq.com</div>
+  </div>
+
+  <!-- ELEVENLABS KEY — OPZIONALE -->
+  <div class="key-block">
+    <span class="key-lbl">🎙 ElevenLabs API Key — narrazione vocale (opzionale)</span>
+    <div class="key-row">
+      <input class="key-inp" id="el-key" type="password" placeholder="Incolla la tua ElevenLabs key...">
+      <button class="key-btn" onclick="testEL()">Verifica</button>
+    </div>
+    <div class="key-st" id="el-st">Senza chiave: voce di sistema</div>
+  </div>
+
+  <button class="start-btn" onclick="startApp()">Inizia a camminare</button>
+  <div class="s-warning">
+    Usa le cuffie · Cammina in luoghi sicuri<br>
+    Dati storici da Wikipedia e OpenStreetMap
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <header>
+    <div class="app-title">STRATI</div>
+    <div class="hdr-right">
+      <span><span class="gps-dot" id="gps-dot"></span><span id="gps-txt">attesa</span></span>
+      <button id="panic-btn" onclick="panic()">PANIC</button>
+    </div>
+  </header>
+
+  <div class="coord-strip">
+    <span id="coord-lat">—° N</span>
+    <span id="coord-lon">—° E</span>
+    <span id="coord-acc">±—m</span>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat"><span class="stat-val" id="s-dist">—</span><span class="stat-lbl">metri</span></div>
+    <div class="stat"><span class="stat-val" id="s-frags">0</span><span class="stat-lbl">luoghi</span></div>
+    <div class="stat"><span class="stat-val" id="s-layers">—</span><span class="stat-lbl">epoche</span></div>
+    <div class="stat"><span class="stat-val" id="s-time">—</span><span class="stat-lbl">ora</span></div>
+  </div>
+
+  <div class="epoch-bar">
+    <span class="epoch-label">Epoca</span>
+    <span class="epoch-value" id="epoch-val">in ricerca...</span>
+  </div>
+
+  <div class="search-status" id="search-status">
+    <div class="search-dot" id="search-dot"></div>
+    <span id="search-txt">GPS in calibrazione — comincia a camminare</span>
+  </div>
+
+  <div class="progress-wrap">
+    <div class="progress-top">
+      <span>Prossimo luogo</span>
+      <span id="prog-next">—</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="prog-fill"></div></div>
+  </div>
+
+  <div class="story-wrap">
+    <div class="frag-header">
+      <div class="frag-num-box" id="frag-n">—</div>
+      <div class="frag-meta-col">
+        <div class="frag-place" id="frag-place">In attesa di segnale...</div>
+        <div class="frag-coords-lbl" id="frag-coords"></div>
+      </div>
+    </div>
+
+    <div class="gen-wrap" id="gen-wrap">
+      <div class="gen-d"></div><div class="gen-d"></div><div class="gen-d"></div>
+      <span>ricerca e narrazione in corso</span>
+    </div>
+
+    <div class="story-text" id="story-text">
+      <span style="color:var(--muted)">Quando il GPS sarà pronto, la storia del luogo emergerà dalla terra.</span>
+    </div>
+
+    <div class="sources-wrap" id="sources-wrap">
+      <div class="sources-lbl">Fonti</div>
+      <div id="sources-list"></div>
+    </div>
+
+    <button class="audio-btn" id="audio-btn" onclick="speakCurrent()">
+      <span id="audio-icon">▶</span>
+      <span id="audio-lbl">Ascolta narrazione</span>
+    </button>
+  </div>
+
+  <div class="history-wrap">
+    <div class="hist-lbl">Luoghi visitati</div>
+    <div id="hist-list"></div>
+  </div>
+
+  <!-- MAPPA -->
+  <div class="map-section">
+    <button class="map-toggle-btn" id="map-toggle-btn" onclick="toggleMap()">
+      <span id="map-icon">◎</span><span id="map-btn-txt"> Mostra percorso su mappa</span>
+    </button>
+    <div id="map-container">
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <!-- FINE SESSIONE -->
+  <div style="padding:1rem 1.5rem 2rem;">
+    <button class="end-btn end-btn-secondary" style="width:100%;border:1px solid #1e1c18;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;cursor:pointer;padding:0.8rem;background:transparent;transition:all 0.3s;" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='#1e1c18';this.style.color='var(--muted)'" onclick="endSession()">
+      ✦ Fine camminata — Vedi riepilogo
+    </button>
+  </div>
+</div>
+
+<!-- PANIC -->
+<div id="panic-overlay">
+  <div class="panic-t">Sei al sicuro.</div>
+  <div class="panic-s">L'app è in pausa.</div>
+  <button class="resume-btn" onclick="resumeApp()">Continua</button>
+</div>
+
+<!-- FINE SESSIONE -->
+<div id="end-overlay">
+  <div class="end-header">
+    <div class="end-eyebrow">Camminata completata</div>
+    <div class="end-title">Fine</div>
+    <div class="end-sub" id="end-date">—</div>
+  </div>
+
+  <div class="end-stats">
+    <div class="end-stat">
+      <span class="end-stat-val" id="end-dist">—</span>
+      <span class="end-stat-lbl">metri percorsi</span>
+    </div>
+    <div class="end-stat">
+      <span class="end-stat-val" id="end-places">—</span>
+      <span class="end-stat-lbl">luoghi narrati</span>
+    </div>
+    <div class="end-stat">
+      <span class="end-stat-val" id="end-epochs-n">—</span>
+      <span class="end-stat-lbl">epoche toccate</span>
+    </div>
+    <div class="end-stat">
+      <span class="end-stat-val" id="end-duration">—</span>
+      <span class="end-stat-lbl">minuti di storia</span>
+    </div>
+  </div>
+
+  <div class="end-epochs" id="end-epochs-wrap">
+    <div class="end-epochs-lbl">Epoche attraversate</div>
+    <div id="end-epochs-list"></div>
+  </div>
+
+  <div class="end-map" id="end-map-wrap">
+    <div id="end-map"></div>
+  </div>
+
+  <div class="end-log">
+    <div class="end-log-lbl">Il tuo diario di viaggio</div>
+    <div id="end-log-list"></div>
+  </div>
+
+  <div class="end-actions">
+    <button class="end-btn end-btn-primary" onclick="exportDiary()">⬇ Scarica diario HTML</button>
+    <button class="end-btn end-btn-secondary" onclick="closeEndSession()">← Torna alla camminata</button>
+    <button class="end-btn end-btn-secondary" onclick="location.reload()">✦ Nuova camminata</button>
+  </div>
+</div>
+
+<div id="flash"></div>
+
+<script>
+// ══════════════════════════════════════════════
+// STATO
+// ══════════════════════════════════════════════
+const S = {
+  openaiKey: null,
+  elKey: null,
+  elVoiceId: 'IKne3meq5aSn9XLyUdCD',
+  gpsReady: false,
+  lastPos: null,
+  currentPos: null,
+  totalDist: 0,
+  lastFragAt: -9999,
+  fragCount: 0,
+  currentText: '',
+  isSpeaking: false,
+  isGenerating: false,
+  currentAudio: null,
+  speedSamples: [],
+  history: [],
+  watchId: null,
+  synth: window.speechSynthesis,
+  epochsVisited: new Set(),
+  currentSources: [],
+  // NUOVI
+  startTime: null,
+  mapVisible: false,
+  leafletMap: null,
+  leafletEndMap: null,
+  pathLine: null,
+  pathCoords: [],
+  markerLayer: null,
+};
+
+const INTERVAL = 300;
+
+// ══════════════════════════════════════════════
+// GROQ API
+// ══════════════════════════════════════════════
+async function testOpenAI() {
+  const key = document.getElementById('gem-key').value.trim();
+  const st = document.getElementById('gem-st');
+  if (!key) { st.textContent='Inserisci una chiave'; st.className='key-st err'; return; }
+  st.textContent='Verifica...'; st.className='key-st';
+  try {
+    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 10,
+        messages:[{ role:'user', content:'Rispondi solo: OK' }]
+      })
+    });
+    if (r.ok) {
+      S.openaiKey = key;
+      st.textContent='✓ Groq attivo — pronto per la narrazione';
+      st.className='key-st ok';
+    } else {
+      const e = await r.json();
+      st.textContent='✗ ' + (e.error?.message || 'Chiave non valida');
+      st.className='key-st err';
+    }
+  } catch(e) { st.textContent='✗ Errore di rete'; st.className='key-st err'; }
+}
+
+async function callOpenAI(systemPrompt, userPrompt) {
+  if (!S.openaiKey) throw new Error('Nessuna Groq key');
+
+  const body = {
+    model: 'llama-3.3-70b-versatile',
+    temperature: 0.8,
+    max_tokens: 1024,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ]
+  };
+
+  const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.openaiKey},
+    body: JSON.stringify(body)
+  });
+
+  if (!r.ok) {
+    const e = await r.json();
+    throw new Error('Groq: ' + (e.error?.message || r.status));
+  }
+
+  const data = await r.json();
+  const raw = data.choices?.[0]?.message?.content || '{}';
+  try {
+    return JSON.parse(raw);
+  } catch(e) {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    return { place:'—', epoch:'—', tone:'documentaristico', text: raw };
+  }
+}
+
+// ══════════════════════════════════════════════
+// ELEVENLABS
+// ══════════════════════════════════════════════
+async function testEL() {
+  const key = document.getElementById('el-key').value.trim();
+  const st = document.getElementById('el-st');
+  if (!key) { st.textContent='Inserisci una chiave'; st.className='key-st err'; return; }
+  st.textContent='Verifica...'; st.className='key-st';
+  try {
+    const r = await fetch('https://api.elevenlabs.io/v1/user', { headers:{'xi-api-key':key} });
+    if (r.ok) {
+      S.elKey = key;
+      const d = await r.json();
+      const rem = d.subscription?.character_limit - d.subscription?.character_count;
+      st.textContent=`✓ Attivo · ${rem ? rem.toLocaleString()+' caratteri' : 'OK'}`;
+      st.className='key-st ok';
+      loadItalianVoice(key);
+    } else { st.textContent='✗ Chiave non valida'; st.className='key-st err'; }
+  } catch(e) { st.textContent='✗ Errore di rete'; st.className='key-st err'; }
+}
+
+async function loadItalianVoice(key) {
+  try {
+    const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers:{'xi-api-key':key} });
+    if (!r.ok) return;
+    const d = await r.json();
+    const v = d.voices.find(v =>
+      v.labels?.language==='it' ||
+      ['luca','giovanni','marco','mario','italian','alberto','dante'].some(n=>v.name.toLowerCase().includes(n))
+    );
+    if (v) { S.elVoiceId=v.voice_id; document.getElementById('el-st').textContent+=` · ${v.name}`; }
+  } catch(e) {}
+}
+
+async function speakWithEL(text) {
+  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${S.elVoiceId}/stream`, {
+    method:'POST',
+    headers:{'xi-api-key':S.elKey,'Content-Type':'application/json','Accept':'audio/mpeg'},
+    body: JSON.stringify({
+      text: text.replace(/\n\n+/g,'\n').trim(),
+      model_id:'eleven_multilingual_v2',
+      voice_settings:{ stability:0.5, similarity_boost:0.78, style:0.3, use_speaker_boost:true }
+    })
+  });
+  if (!r.ok) throw new Error('EL '+r.status);
+  const blob = await r.blob();
+  playBlob(URL.createObjectURL(blob));
+}
+
+function speakWithSystem(text) {
+  if (!S.synth) return;
+  S.synth.cancel();
+  const u = new SpeechSynthesisUtterance(text.replace(/\n/g,' '));
+  const itV = S.synth.getVoices().find(v=>v.lang.startsWith('it'));
+  if (itV) u.voice=itV;
+  u.rate=0.85; u.pitch=0.9;
+  u.onstart=()=>setAudioUI(true); u.onend=()=>setAudioUI(false);
+  S.synth.speak(u); setAudioUI(true);
+}
+
+function playBlob(url) {
+  stopAudio();
+  const a = new Audio(url);
+  a._blobUrl = url; S.currentAudio = a;
+  a.onplay=()=>setAudioUI(true);
+  a.onended=a.onerror=()=>{ setAudioUI(false); URL.revokeObjectURL(url); S.currentAudio=null; };
+  a.play();
+}
+
+function stopAudio() {
+  if (S.currentAudio) { S.currentAudio.pause(); if(S.currentAudio._blobUrl) URL.revokeObjectURL(S.currentAudio._blobUrl); S.currentAudio=null; }
+  if (S.synth) S.synth.cancel();
+}
+
+function setAudioUI(on) {
+  S.isSpeaking=on;
+  document.getElementById('audio-btn').classList.toggle('speaking',on);
+  document.getElementById('audio-btn').classList.remove('loading');
+  document.getElementById('audio-icon').textContent=on?'■':'▶';
+  document.getElementById('audio-lbl').textContent=on?'In riproduzione — tocca per fermare':'Ascolta narrazione';
+}
+
+async function speakText(text) {
+  if (S.elKey) {
+    document.getElementById('audio-btn').classList.add('loading');
+    document.getElementById('audio-lbl').textContent='Sintetizzando...';
+    try { await speakWithEL(text); }
+    catch(e) { document.getElementById('audio-btn').classList.remove('loading'); speakWithSystem(text); }
+  } else { speakWithSystem(text); }
+}
+
+function speakCurrent() {
+  if (S.isSpeaking) { stopAudio(); setAudioUI(false); return; }
+  if (S.currentText) speakText(S.currentText);
+}
+
+// ══════════════════════════════════════════════
+// GPS
+// ══════════════════════════════════════════════
+function startTracking() {
+  if (!navigator.geolocation) { document.getElementById('gps-txt').textContent='GPS non disponibile'; return; }
+  S.watchId = navigator.geolocation.watchPosition(onPos, onErr,
+    { enableHighAccuracy:true, maximumAge:3000, timeout:15000 });
+}
+
+function onPos(pos) {
+  const { latitude:lat, longitude:lon, accuracy, speed } = pos.coords;
+  document.getElementById('gps-dot').classList.add('lock');
+  document.getElementById('gps-txt').textContent=`±${Math.round(accuracy)}m`;
+  document.getElementById('coord-lat').textContent=`${lat.toFixed(4)}° N`;
+  document.getElementById('coord-lon').textContent=`${lon.toFixed(4)}° E`;
+  document.getElementById('coord-acc').textContent=`±${Math.round(accuracy)}m`;
+  S.currentPos={lat,lon};
+  // Traccia percorso per mappa
+  S.pathCoords.push([lat,lon]);
+  if (S.leafletMap && S.pathLine) {
+    S.pathLine.setLatLngs(S.pathCoords);
+    S.leafletMap.panTo([lat,lon]);
+  }
+
+  if (!S.gpsReady) {
+    S.gpsReady=true; S.lastPos={lat,lon};
+    triggerFrag(lat,lon,'primo_fix'); return;
+  }
+
+  const delta = haversine(S.lastPos.lat,S.lastPos.lon,lat,lon);
+  if (delta>2 && delta<600) {
+    S.totalDist+=delta; S.lastPos={lat,lon};
+    const spd=typeof speed==='number'&&speed>=0?speed:delta/3;
+    S.speedSamples.push(spd); if(S.speedSamples.length>8) S.speedSamples.shift();
+  }
+
+  updateUI();
+  checkTrigger(lat,lon);
+}
+
+function onErr(e) { document.getElementById('gps-txt').textContent=e.message.slice(0,20); }
+
+function checkTrigger(lat,lon) {
+  if (S.isGenerating) return;
+  if (S.totalDist - S.lastFragAt >= INTERVAL) triggerFrag(lat,lon,'distanza');
+}
+
+function triggerFrag(lat,lon,reason) {
+  if (S.isGenerating) return;
+  S.lastFragAt=S.totalDist; S.fragCount++;
+  generateFrag(lat,lon,reason);
+}
+
+function updateUI() {
+  const gap = S.totalDist - S.lastFragAt;
+  const pct = Math.min(100,(gap/INTERVAL)*100);
+  document.getElementById('s-dist').textContent=Math.round(S.totalDist);
+  document.getElementById('s-frags').textContent=S.fragCount;
+  document.getElementById('s-time').textContent=timeStr();
+  document.getElementById('prog-fill').style.width=pct+'%';
+  document.getElementById('prog-next').textContent=gap<INTERVAL?`~${Math.round(INTERVAL-gap)}m`:'ricerca...';
+  if (S.epochsVisited.size>0) {
+    const arr=[...S.epochsVisited];
+    document.getElementById('s-layers').textContent=arr.length>1?`${arr.length}`:arr[0]||'—';
+  }
+}
+
+// ══════════════════════════════════════════════
+// RICERCA DATI STORICI
+// Wikipedia Geosearch + Overpass OSM
+// ══════════════════════════════════════════════
+async function fetchHistoricalData(lat,lon) {
+  setSearchStatus(true,'Ricerca su Wikipedia...');
+  const sources=[], wikiData=[], osmData=[];
+
+  // Wikipedia IT
+  try {
+    const wr = await fetch(`https://it.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=500&gslimit=6&format=json&origin=*`);
+    const wd = await wr.json();
+    for (const p of (wd.query?.geosearch||[]).slice(0,3)) {
+      try {
+        const er = await fetch(`https://it.wikipedia.org/w/api.php?action=query&pageids=${p.pageid}&prop=extracts&exintro=true&exsentences=6&format=json&origin=*`);
+        const ed = await er.json();
+        const page = ed.query?.pages?.[p.pageid];
+        if (page?.extract) {
+          wikiData.push({ title:page.title, extract:page.extract.replace(/<[^>]*>/g,'').slice(0,900), dist:Math.round(p.dist), url:`https://it.wikipedia.org/wiki/${encodeURIComponent(page.title)}` });
+          sources.push({ label:page.title, url:`https://it.wikipedia.org/wiki/${encodeURIComponent(page.title)}` });
+        }
+      } catch(e) {}
+    }
+  } catch(e) {}
+
+  // Wikipedia EN (fallback se IT scarso)
+  if (wikiData.length < 2) {
+    try {
+      const er = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=500&gslimit=4&format=json&origin=*`);
+      const ed = await er.json();
+      for (const p of (ed.query?.geosearch||[]).slice(0,2)) {
+        try {
+          const xr = await fetch(`https://en.wikipedia.org/w/api.php?action=query&pageids=${p.pageid}&prop=extracts&exintro=true&exsentences=5&format=json&origin=*`);
+          const xd = await xr.json();
+          const page = xd.query?.pages?.[p.pageid];
+          if (page?.extract && !wikiData.find(w=>w.title===page.title)) {
+            wikiData.push({ title:page.title, extract:page.extract.replace(/<[^>]*>/g,'').slice(0,700), dist:Math.round(p.dist), url:`https://en.wikipedia.org/wiki/${encodeURIComponent(page.title)}`, lang:'en' });
+            sources.push({ label:page.title+' (EN)', url:`https://en.wikipedia.org/wiki/${encodeURIComponent(page.title)}` });
+          }
+        } catch(e) {}
+      }
+    } catch(e) {}
+  }
+
+  // Overpass OSM
+  setSearchStatus(true,'Ricerca su OpenStreetMap...');
+  try {
+    const q=`[out:json][timeout:8];(node["historic"](around:400,${lat},${lon});node["amenity"="place_of_worship"](around:400,${lat},${lon});way["historic"](around:400,${lat},${lon});relation["historic"](around:400,${lat},${lon}););out center tags 8;`;
+    const ovr = await fetch('https://overpass-api.de/api/interpreter',{method:'POST',body:'data='+encodeURIComponent(q)});
+    const ovd = await ovr.json();
+    for (const el of (ovd.elements||[]).slice(0,4)) {
+      const t=el.tags||{};
+      const name=t.name||t['name:it']||t['name:en'];
+      if (name||t.historic) {
+        osmData.push({ name:name||t.historic, type:t.historic||t.amenity||'luogo storico', description:t.description||t['description:it']||t.inscription, startDate:t.start_date, wikipedia:t.wikipedia });
+        if (t.wikipedia) {
+          const wp=t.wikipedia.split(':'); const wl=wp[0]||'it'; const wt=wp.slice(1).join(':');
+          if (wt) sources.push({ label:name||wt, url:`https://${wl}.wikipedia.org/wiki/${encodeURIComponent(wt)}` });
+        }
+      }
+    }
+  } catch(e) {}
+
+  setSearchStatus(false,'');
+  return { wikiData, osmData, sources };
+}
+
+// ══════════════════════════════════════════════
+// GENERAZIONE
+// ══════════════════════════════════════════════
+async function generateFrag(lat,lon,reason) {
+  S.isGenerating=true; S.currentSources=[];
+  document.getElementById('gen-wrap').classList.add('on');
+  document.getElementById('story-text').innerHTML='';
+  document.getElementById('sources-wrap').classList.remove('on');
+  document.getElementById('frag-n').textContent=S.fragCount;
+  document.getElementById('frag-place').textContent='Ricerca in corso...';
+  document.getElementById('frag-coords').textContent=`${lat.toFixed(4)}°N ${lon.toFixed(4)}°E`;
+
+  // ── CACHE CHECK ──
+  const cacheKey = `strati_${lat.toFixed(3)}_${lon.toFixed(3)}`;
+  const cached = loadCache(cacheKey);
+  if (cached) {
+    document.getElementById('gen-wrap').classList.remove('on');
+    S.currentText = cached.text;
+    S.currentSources = cached.sources||[];
+    document.getElementById('frag-place').textContent = cached.place || 'Luogo';
+    document.getElementById('epoch-val').textContent = cached.epoch || '—';
+    const badge = '<span class="cache-badge">cache</span>';
+    document.getElementById('frag-place').innerHTML = (cached.place||'Luogo') + badge;
+    if (cached.epoch) S.epochsVisited.add(cached.epoch);
+    if (cached.sources?.length>0) {
+      document.getElementById('sources-list').innerHTML=cached.sources.map(s=>`<a class="source-tag" href="${s.url}" target="_blank" rel="noopener">${s.label}</a>`).join('');
+      document.getElementById('sources-wrap').classList.add('on');
+    }
+    addHistory({lat,lon,place:cached.place,epoch:cached.epoch,text:cached.text});
+    addMapMarker(lat,lon,cached.place,S.fragCount);
+    doFlash(); vibrate([60,30,60]);
+    typewrite(cached.text, document.getElementById('story-text'), 25, ()=>{
+      if (S.fragCount>=2&&S.elKey) setTimeout(()=>speakText(cached.text),500);
+    });
+    S.isGenerating=false;
+    return;
+  }
+
+  let histData={wikiData:[],osmData:[],sources:[]};
+  try { histData=await fetchHistoricalData(lat,lon); } catch(e){}
+
+  const systemPrompt = `Sei una guida narrativa storica che racconta la storia dei luoghi mentre qualcuno cammina.
+Ricevi dati reali da Wikipedia e OpenStreetMap e li trasformi in narrazione coinvolgente.
+
+FORMATO — rispondi SOLO con JSON valido, nient'altro:
+{
+  "place": "Nome specifico del luogo, via o quartiere",
+  "epoch": "Epoca principale (es: 'Medioevo', 'XIX secolo', 'anni Settanta', 'oggi')",
+  "tone": "uno tra: drammatico | documentaristico | poetico | distaccato | solenne",
+  "text": "Testo narrativo completo"
+}
+
+REGOLE TONO:
+- Guerre, massacri, crimini gravi → drammatico
+- Fatti di cronaca, statistiche, dati → distaccato
+- Architettura, arte, luoghi sacri → solenne o poetico
+- Storia economica, politica, quotidiana → documentaristico
+- Paesaggi, natura, memoria collettiva → poetico
+
+REGOLE TESTO:
+- Seconda persona: "Stai camminando su...", "Sotto i tuoi piedi..."
+- Fatti precisi, date, nomi reali — MAI inventare
+- Se dati scarsi: dì onestamente cosa non si sa
+- 120-200 parole
+- Vai a capo spesso
+- Inizia sempre dal luogo fisico, poi espandi nel tempo`;
+
+  const h=new Date().getHours();
+  const tod=h<6?'notte':h<12?'mattina':h<18?'pomeriggio':'sera';
+  const noData=histData.wikiData.length===0&&histData.osmData.length===0;
+
+  let wikiStr='';
+  if (histData.wikiData.length>0) {
+    wikiStr='\nDATA WIKIPEDIA:\n'+histData.wikiData.map(w=>`— ${w.title} (a ${w.dist}m):\n${w.extract}`).join('\n\n');
+  }
+  let osmStr='';
+  if (histData.osmData.length>0) {
+    osmStr='\nDATA OPENSTREETMAP:\n'+histData.osmData.map(o=>`— ${o.name} (${o.type})${o.startDate?' · '+o.startDate:''}${o.description?' · '+o.description:''}`).join('\n');
+  }
+
+  const userPrompt=`POSIZIONE: ${lat.toFixed(5)}°N, ${lon.toFixed(5)}°E
+Distanza percorsa: ${Math.round(S.totalDist)}m · Ora: ${timeStr()} (${tod}) · Luogo n.${S.fragCount}
+${noData?'\nNESSUN DATO TROVATO — racconta onestamente cosa potrebbe esserci stato, senza inventare fatti specifici.':''}
+${wikiStr}
+${osmStr}
+
+Genera la narrazione.`;
+
+  try {
+    const parsed = await callOpenAI(systemPrompt, userPrompt);
+
+    S.currentText = parsed.text || '';
+    S.currentSources = histData.sources;
+
+    document.getElementById('frag-place').textContent = parsed.place || 'Luogo';
+    document.getElementById('epoch-val').textContent = parsed.epoch || '—';
+    if (parsed.epoch) S.epochsVisited.add(parsed.epoch);
+
+    if (histData.sources.length>0) {
+      document.getElementById('sources-list').innerHTML=histData.sources.map(s=>`<a class="source-tag" href="${s.url}" target="_blank" rel="noopener">${s.label}</a>`).join('');
+      document.getElementById('sources-wrap').classList.add('on');
+    }
+
+    // Salva in cache
+    saveCache(cacheKey, { place:parsed.place, epoch:parsed.epoch, text:parsed.text, sources:histData.sources });
+
+    addHistory({lat,lon,place:parsed.place,epoch:parsed.epoch,text:parsed.text});
+    addMapMarker(lat,lon,parsed.place,S.fragCount);
+    doFlash(); vibrate([60,30,60]);
+
+    document.getElementById('gen-wrap').classList.remove('on');
+    const speed=({drammatico:20,documentaristico:26,poetico:30,distaccato:22,solenne:28})[parsed.tone]||25;
+    typewrite(parsed.text, document.getElementById('story-text'), speed, ()=>{
+      if (S.fragCount>=2&&S.elKey) setTimeout(()=>speakText(parsed.text),500);
+    });
+
+  } catch(e) {
+    console.error('Groq error:',e);
+    document.getElementById('gen-wrap').classList.remove('on');
+    document.getElementById('story-text').textContent='Errore nella narrazione. Riprova tra qualche metro.';
+    document.getElementById('frag-place').textContent='Errore';
+  } finally { S.isGenerating=false; }
+}
+
+// ══════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════
+function setSearchStatus(on,msg) {
+  document.getElementById('search-dot').classList.toggle('on',on);
+  document.getElementById('search-txt').textContent=msg;
+}
+
+function addHistory(item) { S.history.unshift(item); renderHistory(); }
+
+function renderHistory() {
+  document.getElementById('hist-list').innerHTML=S.history.slice(1,8).map((h,i)=>`
+    <div class="hist-item" onclick="replayHist(${i+1})">
+      <div class="hist-place">${h.place||'—'}</div>
+      <div class="hist-epoch">${h.epoch||'—'}</div>
+      <div class="hist-preview">${(h.text||'').slice(0,100).replace(/\n/g,' ')}${(h.text||'').length>100?'…':''}</div>
+    </div>`).join('');
+}
+
+function replayHist(idx) {
+  const h=S.history[idx]; if(!h) return;
+  S.currentText=h.text;
+  document.getElementById('frag-place').textContent=h.place||'—';
+  document.getElementById('epoch-val').textContent=h.epoch||'—';
+  document.getElementById('frag-n').textContent=S.history.length-idx;
+  document.getElementById('story-text').innerHTML='';
+  typewrite(h.text,document.getElementById('story-text'),20);
+}
+
+let twT=null;
+function typewrite(text,el,speed=25,onDone) {
+  if(twT) clearTimeout(twT);
+  el.innerHTML=''; let i=0;
+  const cur=document.createElement('span'); cur.className='cursor-blink'; el.appendChild(cur);
+  function next() {
+    if(i<text.length) {
+      const c=text[i]; cur.before(c==='\n'?document.createElement('br'):document.createTextNode(c)); i++;
+      twT=setTimeout(next,(c==='.'||c===','||c==='…')?speed*5:speed);
+    } else { cur.remove(); if(onDone) onDone(); }
+  }
+  next();
+}
+
+function haversine(la1,lo1,la2,lo2) {
+  const R=6371000,dL=(la2-la1)*Math.PI/180,dO=(lo2-lo1)*Math.PI/180;
+  const a=Math.sin(dL/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dO/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function timeStr() {
+  const n=new Date();
+  return `${n.getHours().toString().padStart(2,'0')}:${n.getMinutes().toString().padStart(2,'0')}`;
+}
+
+function doFlash() { const el=document.getElementById('flash'); el.classList.add('on'); setTimeout(()=>el.classList.remove('on'),120); }
+function vibrate(p) { if(navigator.vibrate) navigator.vibrate(p); }
+
+function startApp() {
+  if (!S.openaiKey) {
+    alert('Inserisci e verifica la Groq API Key prima di iniziare.');
+    return;
+  }
+  S.startTime = new Date();
+  document.getElementById('splash').classList.add('hidden');
+  setTimeout(()=>{
+    document.getElementById('splash').style.display='none';
+    document.getElementById('app').classList.add('visible');
+    startTracking();
+    setTimeout(()=>{ if(!S.gpsReady) document.getElementById('gps-txt').textContent='GPS lento — vai all\'aperto'; },8000);
+  },1500);
+}
+
+function panic() { stopAudio(); setAudioUI(false); document.getElementById('panic-overlay').classList.add('visible'); }
+function resumeApp() { document.getElementById('panic-overlay').classList.remove('visible'); }
+
+setInterval(()=>document.getElementById('s-time').textContent=timeStr(),60000);
+if(window.speechSynthesis) window.speechSynthesis.onvoiceschanged=()=>{};
+
+// ══════════════════════════════════════════════
+// CACHE localStorage
+// ══════════════════════════════════════════════
+function saveCache(key, data) {
+  try {
+    const all = JSON.parse(localStorage.getItem('strati_cache')||'{}');
+    all[key] = { ...data, ts: Date.now() };
+    // Mantieni max 100 voci
+    const keys = Object.keys(all);
+    if (keys.length > 100) {
+      keys.sort((a,b)=>all[a].ts-all[b].ts).slice(0,keys.length-100).forEach(k=>delete all[k]);
+    }
+    localStorage.setItem('strati_cache', JSON.stringify(all));
+  } catch(e) {}
+}
+
+function loadCache(key) {
+  try {
+    const all = JSON.parse(localStorage.getItem('strati_cache')||'{}');
+    const v = all[key];
+    if (!v) return null;
+    // Cache valida per 30 giorni
+    if (Date.now()-v.ts > 30*24*3600*1000) return null;
+    return v;
+  } catch(e) { return null; }
+}
+
+// ══════════════════════════════════════════════
+// MAPPA LEAFLET
+// ══════════════════════════════════════════════
+function toggleMap() {
+  S.mapVisible = !S.mapVisible;
+  const btn = document.getElementById('map-toggle-btn');
+  const container = document.getElementById('map-container');
+  btn.classList.toggle('active', S.mapVisible);
+  document.getElementById('map-icon').textContent = S.mapVisible ? '◉' : '◎';
+  document.getElementById('map-btn-txt').textContent = S.mapVisible ? ' Nascondi mappa' : ' Mostra percorso su mappa';
+  container.classList.toggle('visible', S.mapVisible);
+
+  if (S.mapVisible && !S.leafletMap) {
+    initLeafletMap();
+  } else if (S.mapVisible && S.leafletMap) {
+    S.leafletMap.invalidateSize();
+    if (S.pathCoords.length > 0) S.leafletMap.fitBounds(S.pathCoords);
+  }
+}
+
+function initLeafletMap() {
+  const center = S.currentPos ? [S.currentPos.lat, S.currentPos.lon] : [41.9, 12.5];
+  S.leafletMap = L.map('map', { zoomControl:false, attributionControl:false }).setView(center, 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(S.leafletMap);
+
+  S.markerLayer = L.layerGroup().addTo(S.leafletMap);
+  S.pathLine = L.polyline(S.pathCoords, {
+    color: '#c9a84c', weight: 2, opacity: 0.7, dashArray: '4 4'
+  }).addTo(S.leafletMap);
+
+  // Aggiunge marker già esistenti
+  S.history.forEach((h,i) => {
+    if (h.lat && h.lon) addLeafletMarker(S.leafletMap, h.lat, h.lon, h.place, S.history.length-i, true);
+  });
+}
+
+function addMapMarker(lat, lon, place, n) {
+  if (S.leafletMap) {
+    addLeafletMarker(S.leafletMap, lat, lon, place, n, false);
+    S.pathLine.setLatLngs(S.pathCoords);
+  }
+}
+
+function addLeafletMarker(map, lat, lon, place, n, silent) {
+  const icon = L.divIcon({
+    html: `<div style="width:20px;height:20px;border-radius:50%;background:#0c0b09;border:1.5px solid #c9a84c;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:7px;color:#c9a84c;line-height:1;">${n}</div>`,
+    className: '', iconSize: [20,20], iconAnchor: [10,10]
+  });
+  const marker = L.marker([lat,lon], {icon}).addTo(S.markerLayer||map);
+  marker.bindPopup(`<span style="font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:#c9a84c;">${place||'—'}</span>`, {className:'strati-popup'});
+  if (!silent) { map.panTo([lat,lon]); }
+}
+
+// ══════════════════════════════════════════════
+// FINE SESSIONE
+// ══════════════════════════════════════════════
+function endSession() {
+  if (S.history.length === 0) {
+    alert('Nessuna narrazione registrata ancora. Cammina un po\'!');
+    return;
+  }
+  const now = new Date();
+  const dur = S.startTime ? Math.round((now - S.startTime)/60000) : '—';
+
+  document.getElementById('end-date').textContent =
+    now.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) + ' · ' + timeStr();
+  document.getElementById('end-dist').textContent = Math.round(S.totalDist);
+  document.getElementById('end-places').textContent = S.fragCount;
+  document.getElementById('end-epochs-n').textContent = S.epochsVisited.size || '—';
+  document.getElementById('end-duration').textContent = dur;
+
+  // Epoche
+  const epochsArr = [...S.epochsVisited];
+  document.getElementById('end-epochs-list').innerHTML =
+    epochsArr.map(e=>`<span class="epoch-pill">${e}</span>`).join('') || '<span style="color:var(--muted);font-size:0.6rem;">nessuna rilevata</span>';
+
+  // Log narrativo
+  document.getElementById('end-log-list').innerHTML = [...S.history].reverse().map((h,i)=>`
+    <div class="end-log-item">
+      <div class="end-log-place">${i+1}. ${h.place||'—'}</div>
+      <div class="end-log-epoch">${h.epoch||'—'}</div>
+      <div class="end-log-text">${(h.text||'').replace(/\n/g,'<br>')}</div>
+    </div>`).join('');
+
+  document.getElementById('end-overlay').classList.add('visible');
+
+  // Mappa fine sessione
+  setTimeout(()=>{
+    if (!S.leafletEndMap && S.pathCoords.length > 0) {
+      S.leafletEndMap = L.map('end-map', {zoomControl:false, attributionControl:false})
+        .fitBounds(S.pathCoords.length>1 ? S.pathCoords : [[S.pathCoords[0][0]-0.005, S.pathCoords[0][1]-0.005],[S.pathCoords[0][0]+0.005, S.pathCoords[0][1]+0.005]]);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(S.leafletEndMap);
+      L.polyline(S.pathCoords, {color:'#c9a84c',weight:2,opacity:0.7,dashArray:'4 4'}).addTo(S.leafletEndMap);
+      [...S.history].reverse().forEach((h,i)=>{
+        if (h.lat&&h.lon) addLeafletMarker(S.leafletEndMap,h.lat,h.lon,h.place,i+1,true);
+      });
+    } else if (S.leafletEndMap) {
+      S.leafletEndMap.invalidateSize();
+    }
+  }, 300);
+}
+
+function closeEndSession() {
+  document.getElementById('end-overlay').classList.remove('visible');
+}
+
+// ══════════════════════════════════════════════
+// ESPORTA DIARIO HTML
+// ══════════════════════════════════════════════
+function exportDiary() {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const dur = S.startTime ? Math.round((now-S.startTime)/60000) : '—';
+  const epochsArr = [...S.epochsVisited];
+
+  const entriesHtml = [...S.history].reverse().map((h,i)=>`
+    <div class="entry">
+      <div class="entry-num">${i+1}</div>
+      <div class="entry-body">
+        <div class="entry-place">${h.place||'Luogo sconosciuto'}</div>
+        <div class="entry-epoch">${h.epoch||'—'}</div>
+        <div class="entry-coords">${h.lat?.toFixed(4)}°N ${h.lon?.toFixed(4)}°E</div>
+        <div class="entry-text">${(h.text||'').replace(/\n/g,'<br>')}</div>
+      </div>
+    </div>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STRATI — Diario del ${dateStr}</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0c0b09; --paper:#13120e; --gold:#c9a84c; --gold-dim:#6b5a2a; --text:#d4cfc0; --muted:#5a5548; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'IBM Plex Mono',monospace; padding:2rem 1.5rem 4rem; max-width:680px; margin:0 auto; }
+  .cover { text-align:center; padding:4rem 0 3rem; border-bottom:1px solid #1e1c18; margin-bottom:3rem; }
+  .cover-eye { font-size:0.5rem; letter-spacing:0.5em; color:var(--muted); text-transform:uppercase; margin-bottom:1rem; }
+  .cover-title { font-family:'Playfair Display',serif; font-size:clamp(3rem,15vw,7rem); color:var(--gold); font-weight:400; font-style:italic; letter-spacing:0.1em; line-height:1; }
+  .cover-date { font-size:0.62rem; letter-spacing:0.2em; color:var(--muted); margin-top:1rem; }
+  .stats { display:flex; justify-content:space-around; margin-bottom:3rem; padding:1.5rem; border:1px solid #1e1c18; }
+  .stat { text-align:center; }
+  .stat-val { font-family:'Playfair Display',serif; font-size:1.6rem; color:var(--gold); display:block; font-style:italic; }
+  .stat-lbl { font-size:0.48rem; letter-spacing:0.25em; color:var(--muted); text-transform:uppercase; }
+  .epochs { margin-bottom:3rem; }
+  .section-lbl { font-size:0.5rem; letter-spacing:0.4em; color:var(--muted); text-transform:uppercase; margin-bottom:0.8rem; }
+  .epoch-pill { display:inline-block; font-size:0.58rem; color:var(--gold-dim); border:1px solid #2a2418; padding:0.25rem 0.55rem; margin:0.2rem; }
+  .entry { display:flex; gap:1.5rem; margin-bottom:2.5rem; padding-bottom:2.5rem; border-bottom:1px solid #131210; }
+  .entry-num { font-family:'Playfair Display',serif; font-size:2.5rem; color:#1e1c18; font-style:italic; flex-shrink:0; line-height:1; width:2.5rem; text-align:right; }
+  .entry-place { font-family:'Playfair Display',serif; font-size:1rem; color:var(--gold); font-style:italic; margin-bottom:0.3rem; }
+  .entry-epoch { font-size:0.48rem; letter-spacing:0.2em; color:var(--muted); margin-bottom:0.2rem; }
+  .entry-coords { font-size:0.48rem; letter-spacing:0.12em; color:#2a2820; margin-bottom:0.8rem; }
+  .entry-text { font-size:0.78rem; line-height:2; color:var(--text); }
+  .footer { text-align:center; padding-top:2rem; font-size:0.5rem; letter-spacing:0.3em; color:#2a2820; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="cover">
+  <div class="cover-eye">Una camminata nella memoria</div>
+  <div class="cover-title">Strati</div>
+  <div class="cover-date">${dateStr}</div>
+</div>
+<div class="stats">
+  <div class="stat"><span class="stat-val">${Math.round(S.totalDist)}</span><span class="stat-lbl">Metri</span></div>
+  <div class="stat"><span class="stat-val">${S.fragCount}</span><span class="stat-lbl">Luoghi</span></div>
+  <div class="stat"><span class="stat-val">${epochsArr.length||'—'}</span><span class="stat-lbl">Epoche</span></div>
+  <div class="stat"><span class="stat-val">${dur}</span><span class="stat-lbl">Minuti</span></div>
+</div>
+${epochsArr.length>0?`<div class="epochs"><div class="section-lbl">Epoche attraversate</div>${epochsArr.map(e=>`<span class="epoch-pill">${e}</span>`).join('')}</div>`:''}
+<div class="section-lbl" style="margin-bottom:1.5rem;">Diario</div>
+${entriesHtml}
+<div class="footer">Generato da STRATI · ${dateStr}</div>
+</body>
+</html>`;
+
+  const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `strati_${now.toISOString().slice(0,10)}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
