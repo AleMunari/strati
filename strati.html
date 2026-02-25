@@ -670,14 +670,14 @@ async function testEL() {
   if (!key) { st.textContent='Inserisci una chiave'; st.className='key-st err'; return; }
   st.textContent='Verifica...'; st.className='key-st';
   try {
-    const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers:{'xi-api-key':key} });
+    const r = await fetch('https://api.elevenlabs.io/v1/models', { headers:{'xi-api-key':key} });
     if (r.ok) {
       S.elKey = key;
       st.textContent='✓ ElevenLabs attivo';
       st.className='key-st ok';
       loadItalianVoice(key);
     } else {
-      st.textContent='✗ Chiave non valida';
+      st.textContent='✗ Chiave non valida (cod. '+r.status+')';
       st.className='key-st err';
     }
   } catch(e) { st.textContent='✗ Errore di rete'; st.className='key-st err'; }
