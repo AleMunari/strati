@@ -995,7 +995,7 @@ function _doSpeak(text, section, speakId) {
   const voice = _resolveVoice();
   const u = new SpeechSynthesisUtterance(text.replace(/\n+/g, '. ').replace(/\s+/g, ' ').trim());
   u.lang = 'it-IT';
-  u.rate = 0.75;
+  u.rate = 0.7;
   u.pitch = 0.75;  // tono basso
   u.volume = 0.9;
   if (voice) u.voice = voice; // imposta Federica se trovata
