@@ -470,11 +470,9 @@
 
 <!-- SPLASH -->
 <div id="splash">
-  <!-- form fittizio per bloccare autocomplete Safari -->
-  <form style="display:none" autocomplete="off"><input type="password"></form>
   <!-- PULSANTE IN CIMA -->
   <div style="width:100%;max-width:340px;display:flex;flex-direction:column;align-items:center;gap:0.5rem;margin-bottom:1.5rem;">
-    <button class="start-btn" id="start-btn" style="margin-top:0;width:100%;letter-spacing:0.2em;" onclick="unifiedStart()">
+    <button type="button" class="start-btn" id="start-btn" style="margin-top:0;width:100%;letter-spacing:0.2em;" onclick="unifiedStart()">
       <span id="start-btn-label">🔑 Usa Passkey</span>
     </button>
     <div class="key-st" id="unified-st" style="text-align:center;min-height:1.1rem;"></div>
@@ -500,7 +498,7 @@
     <span class="key-lbl">✦ Groq API Key — necessaria per la narrazione</span>
     <div class="key-row">
       <input class="key-inp" id="gem-key" type="password" placeholder="Incolla la tua Groq key..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-      <button class="key-btn" onclick="testOpenAI()">Verifica</button>
+      <button type="button" class="key-btn" onclick="testOpenAI()">Verifica</button>
     </div>
     <div class="key-st req" id="gem-st">→ Ottienila gratis su console.groq.com</div>
   </div>
@@ -510,7 +508,7 @@
     <span class="key-lbl">🎙 ElevenLabs API Key — voce narrante</span>
     <div class="key-row">
       <input class="key-inp" id="el-key" type="password" placeholder="Incolla la tua ElevenLabs key..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-      <button class="key-btn" onclick="testEL()">Verifica</button>
+      <button type="button" class="key-btn" onclick="testEL()">Verifica</button>
     </div>
     <div class="key-st req" id="el-st">→ Ottienila su elevenlabs.io</div>
   </div>
@@ -534,7 +532,7 @@
     <div class="app-title">STRATI</div>
     <div class="hdr-right">
       <span><span class="gps-dot" id="gps-dot"></span><span id="gps-txt">attesa</span></span>
-      <button id="mute-btn" onclick="toggleMute()" title="Silenzia narrazione">🔊</button>
+      <button type="button" id="mute-btn" onclick="toggleMute()" title="Silenzia narrazione">🔊</button>
     </div>
   </header>
 
@@ -598,12 +596,12 @@
       <div id="sources-list"></div>
     </div>
 
-    <button class="audio-btn" id="audio-btn" onclick="speakCurrent()">
+    <button type="button" class="audio-btn" id="audio-btn" onclick="speakCurrent()">
       <span id="audio-icon">▶</span>
       <span id="audio-lbl">Ascolta narrazione</span>
     </button>
 
-    <button class="approfondisci-btn" id="approfondisci-btn" onclick="approfondisci()" style="display:none;">
+    <button type="button" class="approfondisci-btn" id="approfondisci-btn" onclick="approfondisci()" style="display:none;">
       <span id="approfondisci-icon">✦</span>
       <span id="approfondisci-lbl">Approfondisci</span>
     </button>
@@ -635,7 +633,7 @@
 
   <!-- MAPPA -->
   <div class="map-section">
-    <button class="map-toggle-btn" id="map-toggle-btn" onclick="toggleMap()">
+    <button type="button" class="map-toggle-btn" id="map-toggle-btn" onclick="toggleMap()">
       <span id="map-icon">◎</span><span id="map-btn-txt"> Mostra percorso su mappa</span>
     </button>
     <div id="map-container">
@@ -645,7 +643,7 @@
 
   <!-- FINE SESSIONE -->
   <div style="padding:1rem 1.5rem 2rem;">
-    <button class="end-btn end-btn-secondary" style="width:100%;border:1px solid #1e1c18;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:0.78rem;letter-spacing:0.2em;text-transform:uppercase;cursor:pointer;padding:0.8rem;background:transparent;transition:all 0.3s;" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='#1e1c18';this.style.color='var(--muted)'" onclick="endSession()">
+    <button type="button" class="end-btn end-btn-secondary" style="width:100%;border:1px solid #1e1c18;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:0.78rem;letter-spacing:0.2em;text-transform:uppercase;cursor:pointer;padding:0.8rem;background:transparent;transition:all 0.3s;" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='#1e1c18';this.style.color='var(--muted)'" onclick="endSession()">
       ✦ Fine camminata — Vedi riepilogo
     </button>
   </div>
@@ -693,9 +691,9 @@
   </div>
 
   <div class="end-actions">
-    <button class="end-btn end-btn-primary" onclick="exportDiary()">⬇ Scarica diario HTML</button>
-    <button class="end-btn end-btn-secondary" onclick="closeEndSession()">← Torna alla camminata</button>
-    <button class="end-btn end-btn-secondary" onclick="location.reload()">✦ Nuova camminata</button>
+    <button type="button" class="end-btn end-btn-primary" onclick="exportDiary()">⬇ Scarica diario HTML</button>
+    <button type="button" class="end-btn end-btn-secondary" onclick="closeEndSession()">← Torna alla camminata</button>
+    <button type="button" class="end-btn end-btn-secondary" onclick="location.reload()">✦ Nuova camminata</button>
   </div>
 </div>
 
@@ -703,8 +701,8 @@
 <div id="audio-queue-bar">
   <div class="aqb-dot"></div>
   <div class="aqb-label" id="aqb-label">In riproduzione...</div>
-  <button class="aqb-btn" onclick="audioSkip()">⏭ Salta</button>
-  <button class="aqb-btn stop" onclick="audioStop()">■ Ferma</button>
+  <button type="button" class="aqb-btn" onclick="audioSkip()">⏭ Salta</button>
+  <button type="button" class="aqb-btn stop" onclick="audioStop()">■ Ferma</button>
 </div>
 
 <div id="flash"></div>
