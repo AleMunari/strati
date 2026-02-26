@@ -903,53 +903,52 @@ function dbg(msg, color) {
 }
 
 // ══════════════════════════════════════════════
-// AUDIO SYSTEM — ElevenLabs first, fallback sistema
-// Strategia iOS: AudioContext sbloccato al tap → fetch → decodeAudioData → play
-// Nessun silent loop, nessun elemento <audio> per EL
+// AUDIO SYSTEM — Voci native iOS/macOS (speechSynthesis)
+// Priorità: Alice (IT) → Federica (IT) → qualsiasi voce IT
+// Nessun ElevenLabs, nessun AudioContext, nessun silent loop
 // ══════════════════════════════════════════════
 
-let _ac = null; // AudioContext globale
-let _acSource = null; // sorgente corrente
-let _acGain = null;
-let _currentSpeakId = 0; // cancella richieste in volo
-let _currentSection = null; // sezione in riproduzione ('main' | 'cronologia' | ...)
+let _currentSpeakId = 0;
+let _currentSection = null;
+let _iosVoice = null; // voce italiana scelta, cachata
 
-function _getAC() {
-  if (!_ac || _ac.state === 'closed') {
-    _ac = new (window.AudioContext || window.webkitAudioContext)();
-    _acGain = _ac.createGain();
-    _acGain.connect(_ac.destination);
-  }
-  return _ac;
+// Trova e cacha la miglior voce italiana disponibile
+function _resolveVoice() {
+  if (_iosVoice) return _iosVoice;
+  const voices = window.speechSynthesis?.getVoices() || [];
+  // Priorità: Alice o Federica (voci locali iOS alta qualità)
+  _iosVoice = voices.find(v => v.name === 'Alice')
+    || voices.find(v => v.name === 'Federica')
+    || voices.find(v => v.lang === 'it-IT' && v.localService)
+    || voices.find(v => v.lang === 'it-IT')
+    || voices.find(v => v.lang.startsWith('it'))
+    || null;
+  if (_iosVoice) dbg('✓ voce: ' + _iosVoice.name + ' [' + _iosVoice.lang + '] locale=' + _iosVoice.localService, '#5a8a5a');
+  else dbg('⚠ nessuna voce IT trovata tra ' + voices.length + ' voci', '#f0a030');
+  return _iosVoice;
 }
 
-function _resumeAC() {
-  const ac = _getAC();
-  if (ac.state === 'suspended') ac.resume();
-  return ac;
+function _listVoices() {
+  const voices = window.speechSynthesis?.getVoices() || [];
+  dbg('voci disponibili: ' + voices.length);
+  voices.forEach(v => dbg('  · ' + v.name + ' [' + v.lang + '] locale=' + v.localService));
 }
 
 function stopAllAudio() {
-  _currentSpeakId++; // invalida fetch in volo
-  if (_acSource) { try { _acSource.stop(); } catch(e) {} _acSource = null; }
+  _currentSpeakId++;
   if (window.speechSynthesis) window.speechSynthesis.cancel();
   _setAllUI(false);
   _currentSection = null;
 }
 
 function _setAllUI(on, section) {
-  // Aggiorna btn narrazione principale
   const btn = document.getElementById('audio-btn');
   if (btn) {
-    const isMain = section === 'main' || (!section && on === false);
-    if (!on || section === 'main') {
-      btn.classList.toggle('speaking', on && section === 'main');
-      btn.classList.remove('loading');
-      document.getElementById('audio-icon').textContent = (on && section === 'main') ? '■' : '▶';
-      document.getElementById('audio-lbl').textContent = (on && section === 'main') ? 'In riproduzione — tocca per fermare' : 'Ascolta narrazione';
-    }
+    btn.classList.toggle('speaking', on && section === 'main');
+    btn.classList.remove('loading');
+    document.getElementById('audio-icon').textContent = (on && section === 'main') ? '■' : '▶';
+    document.getElementById('audio-lbl').textContent = (on && section === 'main') ? 'In riproduzione — tocca per fermare' : 'Ascolta narrazione';
   }
-  // Aggiorna btn sezioni approfondimento
   ['cronologia','personaggi','connessioni','aneddoti'].forEach(k => {
     const b = document.getElementById('play-' + k);
     if (!b) return;
@@ -961,198 +960,99 @@ function _setAllUI(on, section) {
   S.isSpeaking = on;
 }
 
-// ── ElevenLabs via AudioContext ──
-async function _speakEL(text, section, speakId) {
-  if (!S.elVoiceId) {
-    dbg('✗ elVoiceId non ancora risolto — attendi...', '#f0a030');
-    // Aspetta che la voce sia risolta (max 5s)
-    for (let i = 0; i < 50 && !S.elVoiceId; i++) {
-      await new Promise(r => setTimeout(r, 100));
-    }
-    if (!S.elVoiceId) { dbg('✗ timeout risoluzione voce', '#c03030'); _clearLoading(section); return; }
-  }
-
-  const ac = _resumeAC();
-  dbg('EL fetch → voce=' + S.elVoiceId + ' section=' + section);
-
-  // Mostra loading
-  _setLoading(section, true);
-
-  let r;
-  try {
-    r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + S.elVoiceId, {
-      method: 'POST',
-      headers: { 'xi-api-key': S.elKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: text.replace(/\n\n+/g, ' ').trim().slice(0, 1200),
-        model_id: 'eleven_multilingual_v2',
-        voice_settings: { stability: 0.45, similarity_boost: 0.80, style: 0.25, use_speaker_boost: true }
-      })
-    });
-  } catch(e) {
-    dbg('✗ EL network ERROR: ' + e.message, '#c03030');
-    if (speakId !== _currentSpeakId) return;
-    _setLoading(section, false);
-    _showAudioError('Errore di rete ElevenLabs');
-    return;
-  }
-
-  if (speakId !== _currentSpeakId) return;
-
-  if (!r.ok) {
-    let errMsg = 'HTTP ' + r.status;
-    try { const j = await r.json(); errMsg += ' — ' + (j?.detail?.message || j?.detail?.status || JSON.stringify(j)); } catch(e) {}
-    dbg('✗ EL HTTP ERROR: ' + errMsg, '#c03030');
-    if (r.status === 401 || r.status === 403) {
-      dbg('⚠ Chiave EL non valida o esaurita!', '#c03030');
-      _showAudioError('Chiave ElevenLabs non valida o crediti esauriti');
-    } else {
-      _showAudioError('Errore ElevenLabs: ' + errMsg);
-    }
-    _setLoading(section, false);
-    return;
-  }
-
-  let arrayBuf;
-  try {
-    const blob = await r.blob();
-    dbg('blob ricevuto: ' + Math.round(blob.size/1024) + 'KB', '#5a8a5a');
-    if (speakId !== _currentSpeakId) return;
-    arrayBuf = await blob.arrayBuffer();
-    if (speakId !== _currentSpeakId) return;
-  } catch(e) {
-    dbg('✗ EL blob error: ' + e.message, '#c03030');
-    _setLoading(section, false);
-    return;
-  }
-
-  let audioBuf;
-  try {
-    audioBuf = await ac.decodeAudioData(arrayBuf);
-    dbg('✓ decode OK — durata: ' + audioBuf.duration.toFixed(1) + 's', '#5a8a5a');
-  } catch(e) {
-    dbg('✗ EL decode error: ' + e.message, '#c03030');
-    _setLoading(section, false);
-    return;
-  }
-
-  if (speakId !== _currentSpeakId) return;
-
-  _setLoading(section, false);
-  _currentSection = section;
-  _setAllUI(true, section);
-
-  const src = ac.createBufferSource();
-  src.buffer = audioBuf;
-  src.connect(_acGain);
-  _acSource = src;
-
-  src.onended = () => {
-    if (speakId !== _currentSpeakId) return;
-    dbg('■ EL fine ' + section);
-    _acSource = null;
-    _currentSection = null;
-    _setAllUI(false);
-  };
-
-  src.start(0);
-  dbg('▶ EL PLAY OK ' + section, '#5a8a5a');
-}
-
-function _showAudioError(msg) {
-  dbg('⛔ ' + msg, '#c03030');
-  // Mostra brevemente sull'etichetta del btn principale
-  const lbl = document.getElementById('audio-lbl');
-  if (lbl) {
-    lbl.textContent = '⚠ ' + msg;
-    setTimeout(() => { lbl.textContent = 'Ascolta narrazione'; }, 4000);
-  }
-}
-
 function _setLoading(section, on) {
   if (section === 'main') {
     const btn = document.getElementById('audio-btn');
-    if (!btn) return;
-    btn.classList.toggle('loading', on);
-    document.getElementById('audio-lbl').textContent = on ? 'Sintetizzando EL...' : 'Ascolta narrazione';
+    if (btn) { btn.classList.toggle('loading', on); document.getElementById('audio-lbl').textContent = on ? 'Caricamento...' : 'Ascolta narrazione'; }
   } else {
     const b = document.getElementById('play-' + section);
     if (b) b.classList.toggle('loading', on);
   }
 }
 
-// ── Fallback speechSynthesis ──
-function _speakSys(text, section, speakId) {
+// ── Core speak via speechSynthesis ──
+function _doSpeak(text, section, speakId) {
   const synth = window.speechSynthesis;
-  if (!synth) { _setAllUI(false); return; }
-  synth.cancel();
+  synth.cancel(); // cancella sempre prima
 
-  function _do(voices) {
+  const voice = _resolveVoice();
+  const u = new SpeechSynthesisUtterance(text.replace(/\n+/g, '. ').replace(/\s+/g, ' ').trim());
+  u.lang = 'it-IT';
+  u.rate = 0.90;
+  u.pitch = 1.0;
+  u.volume = 1.0;
+  if (voice) u.voice = voice;
+
+  dbg('speak → ' + (voice ? voice.name : 'voce default') + ' section=' + section + ' chars=' + text.length);
+
+  let ka = null;
+  u.onstart = () => {
+    if (speakId !== _currentSpeakId) { synth.cancel(); return; }
+    _currentSection = section;
+    _setAllUI(true, section);
+    dbg('▶ OK — ' + (voice ? voice.name : '?'), '#5a8a5a');
+    // keepalive: iOS mette in pausa con schermo spento
+    ka = setInterval(() => { try { if (synth.paused) synth.resume(); } catch(e) {} }, 4000);
+  };
+  u.onend = () => {
+    if (ka) { clearInterval(ka); ka = null; }
     if (speakId !== _currentSpeakId) return;
-    const itV = voices.find(v => v.name === 'Alice')
-             || voices.find(v => v.lang === 'it-IT' && v.localService)
-             || voices.find(v => v.lang.startsWith('it'));
-    if (itV) dbg('sys voce: ' + itV.name, '#5a8a5a');
-    const u = new SpeechSynthesisUtterance(text.replace(/\n/g, '. ').trim());
-    if (itV) u.voice = itV;
-    u.lang = 'it-IT'; u.rate = 0.88; u.pitch = 1.0; u.volume = 1.0;
-    let ka = null;
-    u.onstart = () => {
-      if (speakId !== _currentSpeakId) { synth.cancel(); return; }
-      _currentSection = section;
-      _setAllUI(true, section);
-      ka = setInterval(() => { if (synth.paused) synth.resume(); }, 5000);
-    };
-    u.onend = () => {
-      if (ka) clearInterval(ka);
-      if (speakId !== _currentSpeakId) return;
-      _currentSection = null; _setAllUI(false);
-    };
-    u.onerror = () => {
-      if (ka) clearInterval(ka);
-      _currentSection = null; _setAllUI(false);
-    };
-    synth.speak(u);
-  }
+    dbg('■ fine ' + section);
+    _currentSection = null;
+    _setAllUI(false);
+  };
+  u.onerror = (e) => {
+    if (ka) { clearInterval(ka); ka = null; }
+    dbg('✗ errore: ' + e.error + ' section=' + section, '#c03030');
+    _currentSection = null;
+    _setAllUI(false);
+  };
 
-  const voices = synth.getVoices();
-  if (voices.length > 0) { _do(voices); }
-  else {
-    let done = false;
-    synth.onvoiceschanged = () => { if (done) return; done=true; synth.onvoiceschanged=null; _do(synth.getVoices()); };
-    setTimeout(() => { if (done) return; done=true; synth.onvoiceschanged=null; _do(synth.getVoices()); }, 1000);
-  }
+  synth.speak(u);
 }
-
-function _clearLoading(section) { _setLoading(section, false); }
 
 // ── API pubblica ──
 function speak(text, section) {
-  if (S.muted || !text) return;
-  dbg('speak() section=' + section + ' elKey=' + !!S.elKey + ' voiceId=' + S.elVoiceId);
-  // Se stessa sezione è in play → stop
+  if (S.muted || !text?.trim()) return;
+  // toggle: stessa sezione in play → stop
   if (_currentSection === section && S.isSpeaking) { stopAllAudio(); return; }
-  // Ferma qualsiasi audio precedente
   stopAllAudio();
   const id = _currentSpeakId;
-  // Sblocca AudioContext SINCRONAMENTE nel tap (fondamentale iOS)
-  _resumeAC();
-  // SOLO ElevenLabs — nessun fallback voce sistema
-  if (S.elKey) {
-    _speakEL(text, section, id);
-  } else {
-    dbg('✗ elKey non configurata!', '#c03030');
-    _showAudioError('Chiave ElevenLabs mancante');
+
+  const synth = window.speechSynthesis;
+  if (!synth) { dbg('✗ speechSynthesis non disponibile', '#c03030'); return; }
+
+  // Se voci già caricate → parla subito
+  const voices = synth.getVoices();
+  if (voices.length > 0) {
+    _iosVoice = null; // forza ri-selezione con voci aggiornate
+    _doSpeak(text, section, id);
+    return;
   }
+  // Voci non ancora caricate (primo avvio) → aspetta
+  dbg('attesa caricamento voci...');
+  _setLoading(section, true);
+  let done = false;
+  const onVC = () => {
+    if (done) return; done = true;
+    synth.onvoiceschanged = null;
+    if (id !== _currentSpeakId) return;
+    _setLoading(section, false);
+    _doSpeak(text, section, id);
+  };
+  synth.onvoiceschanged = onVC;
+  setTimeout(onVC, 1500); // fallback timeout
 }
 
-// ── Compatibilità con vecchie chiamate ──
+// ── Compatibilità ──
 function speakText(text) { speak(text, 'main'); }
 function stopAudio() { stopAllAudio(); }
 function setAudioUI(on) { _setAllUI(on, on ? (_currentSection || 'main') : null); }
-function startSilentLoop() { _resumeAC(); S._audioReady = true; dbg('AC sbloccato', '#5a8a5a'); }
+function startSilentLoop() { dbg('startSilentLoop → noop (voci iOS)', '#5a8a5a'); S._audioReady = true; }
 function _stopSilentLoop() {}
 function _restartSilentLoop() {}
+function _clearLoading(section) { _setLoading(section, false); }
+function speakWithSystem(text) { speak(text, 'main'); }
 
 function toggleMute() {
   S.muted = !S.muted;
@@ -1162,13 +1062,11 @@ function toggleMute() {
   if (S.muted) stopAllAudio();
 }
 
-// ── Narrazione principale ──
 function speakCurrent() {
   if (!S.currentText || S.muted) return;
   speak(S.currentText, 'main');
 }
 
-// ── Sezione approfondimento ──
 function speakSection(key) {
   const el = document.getElementById('app-' + key + '-text');
   if (!el) return;
@@ -1177,14 +1075,13 @@ function speakSection(key) {
   speak(text.trim(), key);
 }
 
-// ── Approfondimento: rimuovi bar e funzioni deprecate ──
+// deprecated
 function showApprAudioBar() {}
 function hideApprAudioBar() {}
 function toggleApprAudio() {}
 function stopApprAudio() { stopAllAudio(); }
-function speakApprText(text) {} // non più usata — ogni sezione ha il suo play
-function speakApprWithSystem(text) {}
-function speakWithSystem(text) { _speakSys(text, 'main', _currentSpeakId); }
+function speakApprText() {}
+function speakApprWithSystem() {}
 
 // ══════════════════════════════════════════════
 // APPROFONDISCI
@@ -1793,13 +1690,21 @@ function startApp() {
 
 setInterval(()=>document.getElementById('s-time').textContent=timeStr(),60000);
 
-// Auto-carica voce italiana ElevenLabs all'avvio
+// Lista voci disponibili al boot
 window.addEventListener('DOMContentLoaded', () => {
   bioInit();
-  dbg('Boot — elKey: ' + (S.elKey ? S.elKey.slice(0,12)+'…' : 'MANCANTE'), S.elKey ? '#5a8a5a' : '#c03030');
-  resolveELVoice().then(() => {
-    dbg('voceId finale: ' + S.elVoiceId, S.elVoiceId ? '#5a8a5a' : '#c03030');
-  });
+  const synth = window.speechSynthesis;
+  if (!synth) { dbg('✗ speechSynthesis non disponibile!', '#c03030'); return; }
+  // Le voci potrebbero non essere ancora caricate al DOMContentLoaded
+  const tryList = () => {
+    const voices = synth.getVoices();
+    if (voices.length > 0) {
+      _listVoices();
+      _resolveVoice(); // cacha subito la miglior voce IT
+    }
+  };
+  synth.onvoiceschanged = () => { tryList(); };
+  tryList(); // prova subito, se già disponibili
 });
 
 // ══════════════════════════════════════════════
