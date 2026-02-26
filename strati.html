@@ -463,23 +463,22 @@
     <div class="key-st req" id="gem-st">→ Ottienila gratis su console.groq.com</div>
   </div>
 
-  <!-- ELEVENLABS KEY — OPZIONALE -->
+  <!-- ELEVENLABS KEY — OBBLIGATORIA per narrazione vocale -->
   <div class="key-block">
-    <span class="key-lbl">🎙 ElevenLabs API Key — narrazione vocale (opzionale)</span>
+    <span class="key-lbl">🎙 ElevenLabs API Key — voce narrante</span>
     <div class="key-row">
       <input class="key-inp" id="el-key" type="password" placeholder="Incolla la tua ElevenLabs key..." autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false">
       <button class="key-btn" onclick="testEL()">Verifica</button>
     </div>
-    <div class="key-st" id="el-st">Senza chiave: voce di sistema</div>
+    <div class="key-st req" id="el-st">→ Ottienila su elevenlabs.io</div>
   </div>
 
   <!-- PULSANTE UNICO: Passkey + Start -->
   <div style="margin-top:2.5rem;width:100%;max-width:340px;display:flex;flex-direction:column;align-items:center;gap:0.6rem;">
-    <button class="start-btn" id="start-btn" style="margin-top:0;width:100%;" onclick="unifiedStart()">
-      <span id="start-btn-label">🔑 Inizia con Passkey</span>
+    <button class="start-btn" id="start-btn" style="margin-top:0;width:100%;letter-spacing:0.2em;" onclick="unifiedStart()">
+      <span id="start-btn-label">🔑 Usa Passkey</span>
     </button>
     <div class="key-st" id="unified-st" style="text-align:center;min-height:1.1rem;"></div>
-    <!-- link discreto per chi vuole entrare senza passkey dopo aver inserito le chiavi manualmente -->
     <div id="manual-start-link" style="display:none;">
       <span style="font-size:0.75rem;color:var(--muted);letter-spacing:0.12em;cursor:pointer;text-decoration:underline;text-decoration-color:#3a3830;" onclick="startAppDirect()">Entra senza salvare</span>
       <span style="font-size:0.75rem;color:#3a3830;letter-spacing:0.12em;"> · </span>
@@ -1244,26 +1243,35 @@ async function fetchAddress(lat, lon) {
 // ══════════════════════════════════════════════
 // FOTO DA WIKIPEDIA (immagine articolo più vicino)
 // ══════════════════════════════════════════════
-async function fetchPlacePhoto(lat, lon) {
+// Cerca foto su Wikipedia per nome del luogo (dal testo narrato), NON per coordinate
+async function fetchPlacePhoto(placeName, lat, lon) {
+  if (!placeName || placeName === '—') return null;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 6000);
+  const timeout = setTimeout(() => controller.abort(), 7000);
   try {
-    const langs = ['it','en'];
+    const langs = ['it', 'en'];
     for (const lang of langs) {
-      const r = await fetch(`https://${lang}.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=600&gslimit=6&format=json&origin=*`, {signal: controller.signal});
-      const d = await r.json();
-      const results = d.query?.geosearch || [];
-      for (const item of results) {
-        const r2 = await fetch(`https://${lang}.wikipedia.org/w/api.php?action=query&pageids=${item.pageid}&prop=pageimages&piprop=thumbnail&pithumbsize=800&format=json&origin=*`, {signal: controller.signal});
+      // Cerca per titolo esatto prima
+      const searchR = await fetch(
+        `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(placeName)}&srlimit=3&format=json&origin=*`,
+        { signal: controller.signal }
+      );
+      const searchD = await searchR.json();
+      const hits = searchD.query?.search || [];
+      for (const hit of hits) {
+        const r2 = await fetch(
+          `https://${lang}.wikipedia.org/w/api.php?action=query&pageids=${hit.pageid}&prop=pageimages&piprop=thumbnail&pithumbsize=900&format=json&origin=*`,
+          { signal: controller.signal }
+        );
         const d2 = await r2.json();
-        const page = d2.query?.pages?.[item.pageid];
+        const page = d2.query?.pages?.[hit.pageid];
         const imgUrl = page?.thumbnail?.source;
         if (!imgUrl) continue;
         const u = imgUrl.toLowerCase();
-        const bad = ['logo','flag','coat','wappen','blason','map','schema','plan','icon','picto','symbol','portrait','person','face','.svg'];
+        const bad = ['logo','flag','coat','wappen','blason','map','schema','plan','icon','picto','symbol','portrait','person','face','.svg','stub','question'];
         if (bad.some(b => u.includes(b))) continue;
         clearTimeout(timeout);
-        return { url: imgUrl, caption: item.title };
+        return { url: imgUrl, caption: hit.title };
       }
     }
     return null;
@@ -1296,15 +1304,7 @@ async function generateFrag(lat,lon,reason) {
   fetchAddress(lat, lon).then(addr => {
     if (addr) document.getElementById('frag-address').textContent = addr;
   });
-  // Fetch foto in parallelo (non blocca)
-  fetchPlacePhoto(lat, lon).then(photo => {
-    if (photo) {
-      document.getElementById('place-photo-wrap').innerHTML =
-        `<div class="place-photo-container"><img class="place-photo" src="${photo.url}" alt="${photo.caption}" loading="lazy" onerror="this.closest('.place-photo-wrap').classList.remove('on')"></div>` +
-        `<div class="place-photo-caption">${photo.caption}</div>`;
-      document.getElementById('place-photo-wrap').classList.add('on');
-    }
-  });
+  // Foto: verrà caricata DOPO la risposta di Groq, usando il nome del luogo narrato
 
   // ── CACHE CHECK ──
   const cacheKey = `strati_${lat.toFixed(3)}_${lon.toFixed(3)}`;
@@ -1325,7 +1325,16 @@ async function generateFrag(lat,lon,reason) {
     addHistory({lat,lon,place:cached.place,epoch:cached.epoch,text:cached.text});
     addMapMarker(lat,lon,cached.place,S.fragCount);
     doFlash(); vibrate([60,30,60]);
-    // Audio subito (iOS richiede che sia il più vicino possibile all'avvio della generazione)
+    // Foto dal nome del luogo narrato
+    fetchPlacePhoto(cached.place, lat, lon).then(photo => {
+      if (photo) {
+        document.getElementById('place-photo-wrap').innerHTML =
+          `<div class="place-photo-container"><img class="place-photo" src="${photo.url}" alt="${photo.caption}" loading="lazy" onerror="this.closest('.place-photo-wrap').classList.remove('on')"></div>` +
+          `<div class="place-photo-caption">${photo.caption}</div>`;
+        document.getElementById('place-photo-wrap').classList.add('on');
+      }
+    });
+    // Audio subito
     if (!S.muted && cached.text) speakText(cached.text);
     typewrite(cached.text, document.getElementById('story-text'), 25, ()=>{
       document.getElementById('approfondisci-btn').style.display='flex';
@@ -1433,6 +1442,17 @@ Genera la narrazione per questa posizione esatta.`;
     doFlash(); vibrate([60,30,60]);
 
     document.getElementById('gen-wrap').classList.remove('on');
+
+    // ── FOTO: cerca per nome del luogo narrato (non per coordinate) ──
+    fetchPlacePhoto(parsed.place, lat, lon).then(photo => {
+      if (photo) {
+        document.getElementById('place-photo-wrap').innerHTML =
+          `<div class="place-photo-container"><img class="place-photo" src="${photo.url}" alt="${photo.caption}" loading="lazy" onerror="this.closest('.place-photo-wrap').classList.remove('on')"></div>` +
+          `<div class="place-photo-caption">${photo.caption}</div>`;
+        document.getElementById('place-photo-wrap').classList.add('on');
+      }
+      // Se photo è null, nessuna foto — il wrap rimane nascosto
+    });
 
     // ── AUDIO: parte subito (non aspetta il typewrite — iOS blocca audio in callback async) ──
     if (!S.muted && parsed.text) speakText(parsed.text);
@@ -1576,12 +1596,10 @@ const BIO_KEY = 'strati_bio_v1';
 async function bioInit() {
   const saved = localStorage.getItem(BIO_KEY);
   if (saved) {
-    // Chiavi salvate → pulsante principale è "Inizia con Passkey"
-    document.getElementById('start-btn-label').textContent = '🔑 Inizia con Passkey';
+    document.getElementById('start-btn-label').textContent = '🔑 Usa Passkey';
     document.getElementById('manual-start-link').style.display = 'flex';
     document.getElementById('manual-start-link').style.gap = '0';
   } else {
-    // Nessuna chiave salvata → pulsante è "Inizia a camminare"
     document.getElementById('start-btn-label').textContent = 'Inizia a camminare';
   }
 }
@@ -1744,7 +1762,7 @@ async function bioSaveSilent() {
   };
   localStorage.setItem(BIO_KEY, JSON.stringify(data));
   // Aggiorna label pulsante per la prossima apertura
-  document.getElementById('start-btn-label').textContent = '🔑 Inizia con Passkey';
+  document.getElementById('start-btn-label').textContent = '🔑 Usa Passkey';
   document.getElementById('manual-start-link').style.display = 'flex';
 }
 
