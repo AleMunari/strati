@@ -700,7 +700,7 @@
 <audio id="strati-audio" preload="none" style="display:none"></audio>
 
 <!-- DEBUG AUDIO PANEL -->
-<div id="debug-panel" style="display:none;position:fixed;bottom:0;left:0;right:0;background:#0a0a08;border-top:2px solid #c9a84c;padding:0.6rem 1rem;z-index:9999;font-family:monospace;font-size:0.68rem;color:#c9a84c;max-height:160px;overflow-y:auto;">
+<div id="debug-panel" style="display:block;position:fixed;bottom:0;left:0;right:0;background:#0a0a08;border-top:2px solid #c9a84c;padding:0.6rem 1rem;z-index:9999;font-family:monospace;font-size:0.68rem;color:#c9a84c;max-height:160px;overflow-y:auto;">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">
     <b>🔊 AUDIO DEBUG</b>
     <span style="cursor:pointer;color:#888;padding:0 0.3rem;" onclick="this.closest('#debug-panel').style.display='none'">✕</span>
@@ -715,7 +715,8 @@
 const S = {
   openaiKey: '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',
   elKey: 'sk_c6341681a53148bdb6c62bb4908400d7db0b5f5d0e35252d',
-  elVoiceId: 'IKne3meq5aSn9XLyUdCD',
+  elVoiceId: null, // viene impostato da resolveELVoice() al boot
+  EL_FALLBACK_VOICE: 'IKne3meq5aSn9XLyUdCD', // Charlie — usato solo se non troviamo IT
   gpsReady: false,
   lastPos: null,
   currentPos: null,
@@ -817,7 +818,7 @@ async function callOpenAI(systemPrompt, userPrompt) {
 }
 
 // ══════════════════════════════════════════════
-// ELEVENLABS
+// ELEVENLABS — risoluzione voce e test
 // ══════════════════════════════════════════════
 async function testEL() {
   const key = document.getElementById('el-key').value.trim();
@@ -830,7 +831,7 @@ async function testEL() {
       S.elKey = key;
       st.textContent='✓ ElevenLabs attivo';
       st.className='key-st ok';
-      loadItalianVoice(key);
+      await resolveELVoice();
     } else {
       st.textContent='✗ Chiave non valida (cod. '+r.status+')';
       st.className='key-st err';
@@ -838,17 +839,54 @@ async function testEL() {
   } catch(e) { st.textContent='✗ Errore di rete'; st.className='key-st err'; }
 }
 
-async function loadItalianVoice(key) {
+// Voce italiana preferita — lista priorità
+const IT_VOICE_NAMES = ['giovanni','luca','mario','alberto','dante','marco','italian'];
+// Voci italiane ElevenLabs note (fallback hardcoded se API non le restituisce)
+const IT_VOICE_IDS_KNOWN = [
+  { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi (IT)' },
+  { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel (IT)' },
+];
+
+async function resolveELVoice() {
+  dbg('→ risoluzione voce EL...', '#c9a84c');
   try {
-    const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers:{'xi-api-key':key} });
-    if (!r.ok) return;
+    const r = await fetch('https://api.elevenlabs.io/v1/voices', {
+      headers: { 'xi-api-key': S.elKey }
+    });
+    if (!r.ok) {
+      dbg('✗ voices HTTP ' + r.status + ' — uso voce default', '#c03030');
+      S.elVoiceId = IT_VOICE_IDS_KNOWN[0].id;
+      return;
+    }
     const d = await r.json();
-    const v = d.voices.find(v =>
-      v.labels?.language==='it' ||
-      ['luca','giovanni','marco','mario','italian','alberto','dante'].some(n=>v.name.toLowerCase().includes(n))
-    );
-    if (v) { S.elVoiceId=v.voice_id; document.getElementById('el-st').textContent+=` · ${v.name}`; }
-  } catch(e) {}
+    const voices = d.voices || [];
+    dbg('voci disponibili: ' + voices.length, '#5a8a5a');
+    voices.forEach(v => dbg('  · ' + v.name + ' [' + v.voice_id + '] lang=' + (v.labels?.language||'?')));
+
+    // Cerca prima per lingua italiana esplicita
+    let chosen = voices.find(v => v.labels?.language === 'it');
+    // Poi per nome
+    if (!chosen) chosen = voices.find(v => IT_VOICE_NAMES.some(n => v.name.toLowerCase().includes(n)));
+    // Poi qualsiasi voce disponibile nell'account
+    if (!chosen && voices.length > 0) chosen = voices[0];
+
+    if (chosen) {
+      S.elVoiceId = chosen.voice_id;
+      dbg('✓ voce scelta: ' + chosen.name + ' [' + chosen.voice_id + ']', '#5a8a5a');
+    } else {
+      S.elVoiceId = IT_VOICE_IDS_KNOWN[0].id;
+      dbg('⚠ nessuna voce trovata — uso default ' + IT_VOICE_IDS_KNOWN[0].name, '#f0a030');
+    }
+  } catch(e) {
+    dbg('✗ errore resolveELVoice: ' + e.message, '#c03030');
+    S.elVoiceId = IT_VOICE_IDS_KNOWN[0].id;
+  }
+}
+
+async function loadItalianVoice(key) {
+  // alias per compatibilità
+  if (key) S.elKey = key;
+  await resolveELVoice();
 }
 
 // ── DEBUG ──
@@ -925,17 +963,20 @@ function _setAllUI(on, section) {
 
 // ── ElevenLabs via AudioContext ──
 async function _speakEL(text, section, speakId) {
-  const ac = _resumeAC();
-  dbg('EL fetch → ' + section + ' id=' + speakId);
-
-  // Mostra loading sul bottone giusto
-  if (section === 'main') {
-    const btn = document.getElementById('audio-btn');
-    if (btn) { btn.classList.add('loading'); document.getElementById('audio-lbl').textContent = 'Sintetizzando...'; }
-  } else {
-    const b = document.getElementById('play-' + section);
-    if (b) b.classList.add('loading');
+  if (!S.elVoiceId) {
+    dbg('✗ elVoiceId non ancora risolto — attendi...', '#f0a030');
+    // Aspetta che la voce sia risolta (max 5s)
+    for (let i = 0; i < 50 && !S.elVoiceId; i++) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+    if (!S.elVoiceId) { dbg('✗ timeout risoluzione voce', '#c03030'); _clearLoading(section); return; }
   }
+
+  const ac = _resumeAC();
+  dbg('EL fetch → voce=' + S.elVoiceId + ' section=' + section);
+
+  // Mostra loading
+  _setLoading(section, true);
 
   let r;
   try {
@@ -949,49 +990,55 @@ async function _speakEL(text, section, speakId) {
       })
     });
   } catch(e) {
-    dbg('✗ EL network: ' + e.message + ' → fallback', '#c03030');
+    dbg('✗ EL network ERROR: ' + e.message, '#c03030');
     if (speakId !== _currentSpeakId) return;
-    _clearLoading(section);
-    _speakSys(text, section, speakId);
+    _setLoading(section, false);
+    _showAudioError('Errore di rete ElevenLabs');
     return;
   }
 
-  if (speakId !== _currentSpeakId) return; // cancellato nel frattempo
+  if (speakId !== _currentSpeakId) return;
 
   if (!r.ok) {
-    dbg('✗ EL HTTP ' + r.status + ' → fallback', '#c03030');
-    if (r.status === 401 || r.status === 403) { S.elKey = null; dbg('EL key disabilitata', '#f0a030'); }
-    _clearLoading(section);
-    _speakSys(text, section, speakId);
+    let errMsg = 'HTTP ' + r.status;
+    try { const j = await r.json(); errMsg += ' — ' + (j?.detail?.message || j?.detail?.status || JSON.stringify(j)); } catch(e) {}
+    dbg('✗ EL HTTP ERROR: ' + errMsg, '#c03030');
+    if (r.status === 401 || r.status === 403) {
+      dbg('⚠ Chiave EL non valida o esaurita!', '#c03030');
+      _showAudioError('Chiave ElevenLabs non valida o crediti esauriti');
+    } else {
+      _showAudioError('Errore ElevenLabs: ' + errMsg);
+    }
+    _setLoading(section, false);
     return;
   }
 
   let arrayBuf;
   try {
     const blob = await r.blob();
+    dbg('blob ricevuto: ' + Math.round(blob.size/1024) + 'KB', '#5a8a5a');
     if (speakId !== _currentSpeakId) return;
     arrayBuf = await blob.arrayBuffer();
     if (speakId !== _currentSpeakId) return;
   } catch(e) {
-    dbg('✗ EL blob/buffer: ' + e.message, '#c03030');
-    _clearLoading(section);
-    _speakSys(text, section, speakId);
+    dbg('✗ EL blob error: ' + e.message, '#c03030');
+    _setLoading(section, false);
     return;
   }
 
   let audioBuf;
   try {
     audioBuf = await ac.decodeAudioData(arrayBuf);
+    dbg('✓ decode OK — durata: ' + audioBuf.duration.toFixed(1) + 's', '#5a8a5a');
   } catch(e) {
-    dbg('✗ EL decode: ' + e.message + ' → fallback', '#c03030');
-    _clearLoading(section);
-    _speakSys(text, section, speakId);
+    dbg('✗ EL decode error: ' + e.message, '#c03030');
+    _setLoading(section, false);
     return;
   }
 
   if (speakId !== _currentSpeakId) return;
 
-  _clearLoading(section);
+  _setLoading(section, false);
   _currentSection = section;
   _setAllUI(true, section);
 
@@ -1009,7 +1056,29 @@ async function _speakEL(text, section, speakId) {
   };
 
   src.start(0);
-  dbg('▶ EL OK ' + section, '#5a8a5a');
+  dbg('▶ EL PLAY OK ' + section, '#5a8a5a');
+}
+
+function _showAudioError(msg) {
+  dbg('⛔ ' + msg, '#c03030');
+  // Mostra brevemente sull'etichetta del btn principale
+  const lbl = document.getElementById('audio-lbl');
+  if (lbl) {
+    lbl.textContent = '⚠ ' + msg;
+    setTimeout(() => { lbl.textContent = 'Ascolta narrazione'; }, 4000);
+  }
+}
+
+function _setLoading(section, on) {
+  if (section === 'main') {
+    const btn = document.getElementById('audio-btn');
+    if (!btn) return;
+    btn.classList.toggle('loading', on);
+    document.getElementById('audio-lbl').textContent = on ? 'Sintetizzando EL...' : 'Ascolta narrazione';
+  } else {
+    const b = document.getElementById('play-' + section);
+    if (b) b.classList.toggle('loading', on);
+  }
 }
 
 // ── Fallback speechSynthesis ──
@@ -1055,19 +1124,12 @@ function _speakSys(text, section, speakId) {
   }
 }
 
-function _clearLoading(section) {
-  if (section === 'main') {
-    const btn = document.getElementById('audio-btn');
-    if (btn) { btn.classList.remove('loading'); document.getElementById('audio-lbl').textContent = 'Ascolta narrazione'; }
-  } else {
-    const b = document.getElementById('play-' + section);
-    if (b) b.classList.remove('loading');
-  }
-}
+function _clearLoading(section) { _setLoading(section, false); }
 
 // ── API pubblica ──
 function speak(text, section) {
   if (S.muted || !text) return;
+  dbg('speak() section=' + section + ' elKey=' + !!S.elKey + ' voiceId=' + S.elVoiceId);
   // Se stessa sezione è in play → stop
   if (_currentSection === section && S.isSpeaking) { stopAllAudio(); return; }
   // Ferma qualsiasi audio precedente
@@ -1075,10 +1137,12 @@ function speak(text, section) {
   const id = _currentSpeakId;
   // Sblocca AudioContext SINCRONAMENTE nel tap (fondamentale iOS)
   _resumeAC();
+  // SOLO ElevenLabs — nessun fallback voce sistema
   if (S.elKey) {
     _speakEL(text, section, id);
   } else {
-    _speakSys(text, section, id);
+    dbg('✗ elKey non configurata!', '#c03030');
+    _showAudioError('Chiave ElevenLabs mancante');
   }
 }
 
@@ -1732,7 +1796,10 @@ setInterval(()=>document.getElementById('s-time').textContent=timeStr(),60000);
 // Auto-carica voce italiana ElevenLabs all'avvio
 window.addEventListener('DOMContentLoaded', () => {
   bioInit();
-  loadItalianVoice(S.elKey);
+  dbg('Boot — elKey: ' + (S.elKey ? S.elKey.slice(0,12)+'…' : 'MANCANTE'), S.elKey ? '#5a8a5a' : '#c03030');
+  resolveELVoice().then(() => {
+    dbg('voceId finale: ' + S.elVoiceId, S.elVoiceId ? '#5a8a5a' : '#c03030');
+  });
 });
 
 // ══════════════════════════════════════════════
