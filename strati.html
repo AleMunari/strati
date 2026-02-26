@@ -468,6 +468,87 @@
   .end-btn-secondary:hover { border-color: #2a2820; color: var(--text); }
   .end-map { height: 180px; border: 1px solid #1e1c18; margin-bottom: 2rem; }
   #end-map { width: 100%; height: 100%; }
+
+  /* ══ MODE SELECTOR ══ */
+  .mode-tabs {
+    display: flex; width: 100%; max-width: 340px;
+    border: 1px solid #2a2820; margin-bottom: 1.8rem;
+  }
+  .mode-tab {
+    flex: 1; padding: 0.75rem 0.5rem; background: transparent;
+    border: none; color: var(--muted); font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase;
+    cursor: pointer; transition: all 0.3s; text-align: center;
+  }
+  .mode-tab.active { background: #1a1810; color: var(--gold); }
+  .mode-tab:first-child { border-right: 1px solid #2a2820; }
+
+  /* ══ SPLASH MAP PICKER ══ */
+  #splash-map-wrap {
+    display: none; width: 100%; max-width: 340px;
+    flex-direction: column; gap: 0.8rem; margin-bottom: 1rem;
+  }
+  #splash-map-wrap.on { display: flex; }
+  #splash-map { width: 100%; height: 260px; border: 1px solid #2a2820; }
+  .splash-map-hint {
+    font-size: 0.75rem; letter-spacing: 0.1em; color: var(--muted);
+    text-align: center; line-height: 1.8;
+  }
+  .splash-map-hint em { color: var(--gold-dim); font-style: normal; }
+  #splash-map-confirm {
+    width: 100%; padding: 0.9rem; background: transparent;
+    border: 1px solid var(--gold-dim); color: var(--gold);
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.82rem;
+    letter-spacing: 0.25em; text-transform: uppercase; cursor: pointer;
+    transition: all 0.3s; display: none;
+  }
+  #splash-map-confirm:hover { background: var(--gold-dim); color: #fff; }
+  #splash-map-confirm.on { display: block; }
+  #splash-map-chosen {
+    font-size: 0.72rem; letter-spacing: 0.1em; color: var(--gold-dim);
+    text-align: center; min-height: 1rem;
+  }
+
+  /* ══ VIRTUAL MAP OVERLAY ══ */
+  #vmap-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.88); z-index: 3000;
+    flex-direction: column; align-items: center; justify-content: center;
+    padding: 1.5rem;
+  }
+  #vmap-overlay.on { display: flex; }
+  .vmap-title {
+    font-family: 'Playfair Display', serif; font-size: 1.2rem;
+    color: var(--gold); font-style: italic; margin-bottom: 1rem; letter-spacing: 0.1em;
+  }
+  #vmap-map { width: 100%; max-width: 500px; height: 55vh; border: 1px solid #2a2820; }
+  .vmap-hint { font-size: 0.72rem; letter-spacing: 0.1em; color: var(--muted); margin: 0.7rem 0; text-align: center; }
+  .vmap-btns { display: flex; gap: 0.7rem; width: 100%; max-width: 500px; }
+  #vmap-confirm {
+    flex: 1; padding: 0.85rem; background: transparent;
+    border: 1px solid var(--gold-dim); color: var(--gold);
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem;
+    letter-spacing: 0.2em; text-transform: uppercase; cursor: pointer;
+    transition: all 0.3s; display: none;
+  }
+  #vmap-confirm.on { display: block; }
+  #vmap-confirm:hover { background: var(--gold-dim); color: #fff; }
+  #vmap-cancel {
+    padding: 0.85rem 1.2rem; background: transparent;
+    border: 1px solid #2a2820; color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem;
+    letter-spacing: 0.15em; text-transform: uppercase; cursor: pointer; transition: all 0.3s;
+  }
+  #vmap-cancel:hover { border-color: var(--red); color: var(--red); }
+  #vmap-chosen { font-size: 0.7rem; letter-spacing: 0.1em; color: var(--gold-dim); text-align: center; margin-top: 0.3rem; min-height: 1rem; }
+
+  /* ══ VIRTUAL MODE BADGE ══ */
+  .virtual-badge {
+    font-size: 0.68rem; letter-spacing: 0.18em; color: var(--gold-dim);
+    border: 1px solid #2a2418; padding: 0.2rem 0.5rem;
+    text-transform: uppercase; cursor: pointer; transition: all 0.25s; white-space: nowrap;
+  }
+  .virtual-badge:hover { color: var(--gold); border-color: var(--gold-dim); }
 </style>
 </head>
 <body>
@@ -493,7 +574,22 @@
   <div class="s-title">STRATI</div>
   <div class="s-sub">Storia viva sotto i tuoi piedi</div>
   <div class="s-divider"></div>
-  <div class="s-desc">
+
+  <!-- SELEZIONE MODALITÀ -->
+  <div class="mode-tabs">
+    <button class="mode-tab active" id="tab-gps" onclick="selectMode('gps')">📍 GPS reale</button>
+    <button class="mode-tab" id="tab-map" onclick="selectMode('map')">🗺 Scegli sulla mappa</button>
+  </div>
+
+  <!-- MAPPA PICKER (modalità virtuale) -->
+  <div id="splash-map-wrap">
+    <div id="splash-map"></div>
+    <div class="splash-map-hint">Tocca o clicca sulla mappa per scegliere il punto di partenza.<br><em>Puoi spostarti durante la camminata.</em></div>
+    <div id="splash-map-chosen"></div>
+    <button id="splash-map-confirm" onclick="startVirtualFromSplash()">✦ Inizia qui</button>
+  </div>
+
+  <div class="s-desc" id="s-desc-gps">
     Cammini. Il GPS ti localizza.<br>
     L'AI cerca cosa è successo <em>esattamente lì</em>.<br>
     Dall'antichità alla cronaca di ieri.
@@ -520,7 +616,8 @@
   <header>
     <div class="app-title">STRATI</div>
     <div class="hdr-right">
-      <span><span class="gps-dot" id="gps-dot"></span><span id="gps-txt">attesa</span></span>
+      <span id="gps-indicator"><span class="gps-dot" id="gps-dot"></span><span id="gps-txt">attesa</span></span>
+      <button class="virtual-badge" id="virtual-badge" onclick="openVmap()" style="display:none;">🗺 Cambia punto</button>
       <button id="mute-btn" onclick="toggleMute()" title="Silenzia narrazione">🔊</button>
     </div>
   </header>
@@ -693,6 +790,18 @@
   </div>
 </div>
 
+<!-- VIRTUAL MAP OVERLAY -->
+<div id="vmap-overlay">
+  <div class="vmap-title">Scegli un nuovo punto</div>
+  <div id="vmap-map"></div>
+  <div class="vmap-hint">Tocca sulla mappa per spostare la narrazione</div>
+  <div id="vmap-chosen"></div>
+  <div class="vmap-btns">
+    <button id="vmap-confirm" onclick="confirmVmap()">✦ Vai qui</button>
+    <button id="vmap-cancel" onclick="closeVmap()">✕ Annulla</button>
+  </div>
+</div>
+
 <div id="flash"></div>
 <audio id="strati-audio" preload="none" style="display:none"></audio>
 
@@ -728,6 +837,8 @@ const S = {
   muted: false,
   lastAddrPos: null,
   currentApprofondimento: null,
+  virtualMode: false,
+  virtualPos: null,
   mapVisible: false,
   leafletMap: null,
   leafletEndMap: null,
@@ -804,18 +915,7 @@ async function callOpenAI(systemPrompt, userPrompt) {
   }
 }
 
-// ── DEBUG ──
-function dbg(msg, color) {
-  const el = document.getElementById('debug-log');
-  if (!el) return;
-  const t = new Date().toTimeString().slice(0,8);
-  const d = document.createElement('div');
-  d.style.color = color || '#c9a84c';
-  d.textContent = t + ' ' + msg;
-  el.appendChild(d);
-  el.scrollTop = el.scrollHeight;
-  console.log('[STRATI]', msg);
-}
+
 
 // ══════════════════════════════════════════════
 // AUDIO SYSTEM — Voci native iOS/macOS (speechSynthesis)
@@ -831,7 +931,6 @@ function _resolveVoice() {
   // Non cachare — rileva ogni volta, le voci possono cambiare
   const voices = window.speechSynthesis?.getVoices() || [];
   const itVoices = voices.filter(v => v.lang.startsWith('it'));
-  dbg('voci italiane trovate: ' + itVoices.map(v => '"' + v.name + '"').join(', '));
 
   // Cerca Federica in tutti i formati possibili che iOS può usare
   const voice =
@@ -844,16 +943,12 @@ function _resolveVoice() {
     voices.find(v => v.lang === 'it-IT') ||
     null;
 
-  if (voice) dbg('✓ voce: "' + voice.name + '"', '#5a8a5a');
-  else dbg('⚠ nessuna voce italiana trovata', '#c03030');
   return voice;
 }
 
 function _listVoices() {
   const voices = window.speechSynthesis?.getVoices() || [];
   const itVoices = voices.filter(v => v.lang.startsWith('it'));
-  dbg('voci totali: ' + voices.length + ' | italiane: ' + itVoices.length);
-  itVoices.forEach(v => dbg('  🇮🇹 "' + v.name + '" [' + v.lang + '] locale=' + v.localService));
 }
 
 function stopAllAudio() {
@@ -905,26 +1000,22 @@ function _doSpeak(text, section, speakId) {
   u.volume = 0.9;
   if (voice) u.voice = voice; // imposta Federica se trovata
 
-  dbg('speak → "' + (voice ? voice.name : 'default sistema') + '" rate=' + u.rate + ' chars=' + text.length);
 
   let ka = null;
   u.onstart = () => {
     if (speakId !== _currentSpeakId) { synth.cancel(); return; }
     _currentSection = section;
     _setAllUI(true, section);
-    dbg('▶ in riproduzione: "' + (voice ? voice.name : 'default') + '"', '#5a8a5a');
     ka = setInterval(() => { try { if (synth.paused) synth.resume(); } catch(e) {} }, 4000);
   };
   u.onend = () => {
     if (ka) { clearInterval(ka); ka = null; }
     if (speakId !== _currentSpeakId) return;
-    dbg('■ fine ' + section);
     _currentSection = null;
     _setAllUI(false);
   };
   u.onerror = (e) => {
     if (ka) { clearInterval(ka); ka = null; }
-    dbg('✗ errore: ' + e.error, '#c03030');
     _currentSection = null;
     _setAllUI(false);
   };
@@ -941,7 +1032,6 @@ function speak(text, section) {
   const id = _currentSpeakId;
 
   const synth = window.speechSynthesis;
-  if (!synth) { dbg('✗ speechSynthesis non disponibile', '#c03030'); return; }
 
   // Se voci già caricate → parla subito
   const voices = synth.getVoices();
@@ -950,7 +1040,6 @@ function speak(text, section) {
     return;
   }
   // Voci non ancora caricate (primo avvio) → aspetta
-  dbg('attesa caricamento voci...');
   _setLoading(section, true);
   let done = false;
   const onVC = () => {
@@ -968,7 +1057,6 @@ function speak(text, section) {
 function speakText(text) { speak(text, 'main'); }
 function stopAudio() { stopAllAudio(); }
 function setAudioUI(on) { _setAllUI(on, on ? (_currentSection || 'main') : null); }
-function startSilentLoop() { dbg('startSilentLoop → noop (voci iOS)', '#5a8a5a'); S._audioReady = true; }
 function _stopSilentLoop() {}
 function _restartSilentLoop() {}
 function _clearLoading(section) { _setLoading(section, false); }
@@ -1588,21 +1676,135 @@ function timeStr() {
 function doFlash() { const el=document.getElementById('flash'); el.classList.add('on'); setTimeout(()=>el.classList.remove('on'),120); }
 function vibrate(p) { if(navigator.vibrate) navigator.vibrate(p); }
 
-function startApp() {
+// ══════════════════════════════════════════════
+// MODALITÀ VIRTUALE — selezione punto su mappa
+// ══════════════════════════════════════════════
+let _splashMap = null;
+let _splashMarker = null;
+let _splashPicked = null;
+
+let _vmapMap = null;
+let _vmapMarker = null;
+let _vmapPicked = null;
+
+function selectMode(mode) {
+  const isMap = mode === 'map';
+  document.getElementById('tab-gps').classList.toggle('active', !isMap);
+  document.getElementById('tab-map').classList.toggle('active', isMap);
+  document.getElementById('splash-map-wrap').classList.toggle('on', isMap);
+  document.getElementById('s-desc-gps').style.display = isMap ? 'none' : '';
+  // Nascondi/mostra pulsante start principale
+  document.getElementById('start-btn').style.display = isMap ? 'none' : '';
+
+  if (isMap && !_splashMap) {
+    setTimeout(() => {
+      _splashMap = L.map('splash-map', { zoomControl: true, attributionControl: false })
+        .setView([41.9, 12.5], 3);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(_splashMap);
+      _splashMap.on('click', e => {
+        _splashPicked = e.latlng;
+        if (_splashMarker) _splashMarker.setLatLng(e.latlng);
+        else _splashMarker = L.circleMarker(e.latlng, { radius: 7, color: '#c9a84c', fillColor: '#c9a84c', fillOpacity: 0.9 }).addTo(_splashMap);
+        document.getElementById('splash-map-chosen').textContent =
+          _splashPicked.lat.toFixed(4) + '°N  ' + _splashPicked.lng.toFixed(4) + '°E';
+        document.getElementById('splash-map-confirm').classList.add('on');
+      });
+    }, 100);
+  }
+}
+
+function startVirtualFromSplash() {
+  if (!_splashPicked) return;
+  S.virtualMode = true;
+  S.virtualPos = { lat: _splashPicked.lat, lon: _splashPicked.lng };
+  startApp(true);
+}
+
+// ── VMAP OVERLAY (cambia posizione durante la camminata) ──
+function openVmap() {
+  document.getElementById('vmap-overlay').classList.add('on');
+  _vmapPicked = null;
+  document.getElementById('vmap-confirm').classList.remove('on');
+  document.getElementById('vmap-chosen').textContent = '';
+
+  setTimeout(() => {
+    if (!_vmapMap) {
+      const center = S.currentPos ? [S.currentPos.lat, S.currentPos.lon] : [41.9, 12.5];
+      _vmapMap = L.map('vmap-map', { zoomControl: true, attributionControl: false }).setView(center, 5);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(_vmapMap);
+      _vmapMap.on('click', e => {
+        _vmapPicked = e.latlng;
+        if (_vmapMarker) _vmapMarker.setLatLng(e.latlng);
+        else _vmapMarker = L.circleMarker(e.latlng, { radius: 7, color: '#c9a84c', fillColor: '#c9a84c', fillOpacity: 0.9 }).addTo(_vmapMap);
+        document.getElementById('vmap-chosen').textContent =
+          _vmapPicked.lat.toFixed(4) + '°N  ' + _vmapPicked.lng.toFixed(4) + '°E';
+        document.getElementById('vmap-confirm').classList.add('on');
+      });
+    } else {
+      _vmapMap.invalidateSize();
+      if (S.currentPos) _vmapMap.setView([S.currentPos.lat, S.currentPos.lon], 5);
+    }
+  }, 150);
+}
+
+function closeVmap() {
+  document.getElementById('vmap-overlay').classList.remove('on');
+}
+
+function confirmVmap() {
+  if (!_vmapPicked) return;
+  closeVmap();
+  const lat = _vmapPicked.lat;
+  const lon = _vmapPicked.lng;
+  S.virtualPos = { lat, lon };
+  S.currentPos = { lat, lon };
+  S.pathCoords.push([lat, lon]);
+  if (S.leafletMap && S.pathLine) { S.pathLine.setLatLngs(S.pathCoords); S.leafletMap.panTo([lat, lon]); }
+  fetchAddress(lat, lon).then(addr => {
+    if (addr) document.getElementById('addr-strip').textContent = addr;
+  });
+  // Resetta cooldown e genera nuovo frammento
+  S.lastFragTime = 0;
+  S.lastFragPos = null;
+  S.lastFragAt = S.totalDist - 999;
+  S.fragCount++;
+  document.getElementById('frag-n').textContent = S.fragCount;
+  generateFrag(lat, lon, 'virtual_move');
+}
+
+function startApp(virtual) {
   if (!S.openaiKey) {
     alert('Inserisci e verifica la Groq API Key prima di iniziare.'); return;
   }
-  dbg('startApp() — avvio loop silenzioso');
   startSilentLoop();
-
   S.startTime = new Date();
-  startTracking();
+
+  if (virtual && S.virtualPos) {
+    // Modalità virtuale: niente GPS reale
+    document.getElementById('gps-indicator').style.display = 'none';
+    document.getElementById('virtual-badge').style.display = 'flex';
+    S.gpsReady = true;
+    S.currentPos = S.virtualPos;
+    S.lastPos = S.virtualPos;
+    S.anchorPos = S.virtualPos;
+    S.lastAddrPos = S.virtualPos;
+    S.pathCoords.push([S.virtualPos.lat, S.virtualPos.lon]);
+    fetchAddress(S.virtualPos.lat, S.virtualPos.lon).then(addr => {
+      if (addr) document.getElementById('addr-strip').textContent = addr;
+    });
+    document.getElementById('gps-dot').classList.add('lock');
+    triggerFrag(S.virtualPos.lat, S.virtualPos.lon, 'primo_fix');
+  } else {
+    startTracking();
+  }
+
   document.getElementById('splash').classList.add('hidden');
   setTimeout(() => {
     document.getElementById('splash').style.display = 'none';
     document.getElementById('app').classList.add('visible');
-    dbg('app visibile — voce: ' + (_iosVoice ? _iosVoice.name : 'non ancora caricata'));
-    setTimeout(() => { if (!S.gpsReady) document.getElementById('gps-txt').textContent = 'GPS lento — vai all\'aperto'; }, 8000);
+    if (!virtual) {
+      setTimeout(() => { if (!S.gpsReady) document.getElementById('gps-txt').textContent = 'GPS lento — vai all\'aperto'; }, 8000);
+    }
   }, 1200);
 }
 
@@ -1612,7 +1814,6 @@ setInterval(()=>document.getElementById('s-time').textContent=timeStr(),60000);
 window.addEventListener('DOMContentLoaded', () => {
   bioInit();
   const synth = window.speechSynthesis;
-  if (!synth) { dbg('✗ speechSynthesis non disponibile!', '#c03030'); return; }
   // Le voci potrebbero non essere ancora caricate al DOMContentLoaded
   const tryList = () => {
     const voices = synth.getVoices();
