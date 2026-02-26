@@ -854,13 +854,57 @@ function speakWithSystem(text) {
   dbg('→ voce sistema');
   if (!S.synth) { dbg('✗ no speechSynthesis', '#c03030'); return; }
   S.synth.cancel();
-  const u = new SpeechSynthesisUtterance(text.replace(/\n/g, ' '));
-  const itV = S.synth.getVoices().find(v => v.lang.startsWith('it'));
-  if (itV) { u.voice = itV; dbg('voce: ' + itV.name); }
-  u.rate = 0.85; u.pitch = 0.92;
-  u.onstart = () => { dbg('▶ sistema OK', '#5a8a5a'); setAudioUI(true); };
-  u.onend = u.onerror = () => { dbg('■ sistema fine'); setAudioUI(false); };
-  S.synth.speak(u); setAudioUI(true);
+
+  function doSpeak(voices) {
+    const u = new SpeechSynthesisUtterance(text.replace(/\n/g, ' '));
+    const itV = voices.find(v => v.lang.startsWith('it'));
+    if (itV) { u.voice = itV; dbg('voce: ' + itV.name); }
+    else { dbg('voce default (' + voices.length + ' disponibili)'); }
+    u.lang = 'it-IT';
+    u.rate = 0.88; u.pitch = 0.92; u.volume = 1;
+    // Workaround iOS: rilancia periodicamente se in corso (Safari si blocca dopo 15s)
+    let kickTimer = null;
+    u.onstart = () => {
+      dbg('▶ sistema OK', '#5a8a5a');
+      setAudioUI(true);
+      kickTimer = setInterval(() => {
+        if (S.synth.speaking) { S.synth.pause(); S.synth.resume(); }
+        else { clearInterval(kickTimer); kickTimer = null; }
+      }, 10000);
+    };
+    u.onend = () => {
+      if (kickTimer) { clearInterval(kickTimer); kickTimer = null; }
+      dbg('■ sistema fine');
+      setAudioUI(false);
+    };
+    u.onerror = (e) => {
+      if (kickTimer) { clearInterval(kickTimer); kickTimer = null; }
+      dbg('✗ sistema errore: ' + (e.error||'?'), '#c03030');
+      setAudioUI(false);
+    };
+    S.synth.speak(u);
+    setAudioUI(true);
+  }
+
+  const voices = S.synth.getVoices();
+  if (voices.length > 0) {
+    doSpeak(voices);
+  } else {
+    // iOS carica le voci in modo asincrono
+    dbg('attesa voci iOS...');
+    let done = false;
+    S.synth.onvoiceschanged = () => {
+      if (done) return; done = true;
+      S.synth.onvoiceschanged = null;
+      doSpeak(S.synth.getVoices());
+    };
+    // Timeout sicurezza: parla comunque dopo 1.5s
+    setTimeout(() => {
+      if (done) return; done = true;
+      S.synth.onvoiceschanged = null;
+      doSpeak(S.synth.getVoices());
+    }, 1500);
+  }
 }
 
 function stopAudio() {
@@ -914,7 +958,17 @@ function speakText(text) {
         voice_settings: { stability: 0.5, similarity_boost: 0.78, style: 0.3, use_speaker_boost: true }
       })
     })
-    .then(r => { dbg('EL HTTP ' + r.status); if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+    .then(r => {
+      dbg('EL HTTP ' + r.status);
+      if (!r.ok) {
+        if (r.status === 401 || r.status === 403) {
+          dbg('EL chiave non valida — disabilitata per questa sessione', '#f0a030');
+          S.elKey = null; // Non riprovare EL finché non viene reinserita
+        }
+        throw new Error('HTTP ' + r.status);
+      }
+      return r.blob();
+    })
     .then(blob => {
       if (btn) btn.classList.remove('loading');
       dbg('blob ' + Math.round(blob.size/1024) + 'KB → play su elem DOM');
@@ -1549,9 +1603,15 @@ function startApp() {
   startSilentLoop();
 
   if (window.speechSynthesis) {
+    // Pre-carica le voci (essenziale su iOS Safari)
     window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = () => {
+      const vv = window.speechSynthesis.getVoices();
+      dbg('voci caricate: ' + vv.length + (vv.find(v=>v.lang.startsWith('it'))?' (IT ✓)':' (no IT)'));
+    };
+    // Utterance silenziosa per sbloccare il contesto audio (iOS richiede gesto utente)
     const w = new SpeechSynthesisUtterance(' ');
-    w.volume = 0;
+    w.volume = 0; w.rate = 1;
     window.speechSynthesis.speak(w);
     dbg('speechSynthesis warm-up inviato');
   }
