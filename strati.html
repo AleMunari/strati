@@ -344,6 +344,33 @@
     font-size: var(--fs-base); line-height: var(--lh); color: var(--text);
   }
 
+
+  /* ══ AUDIO QUEUE BAR ══ */
+  #audio-queue-bar {
+    display: none; position: sticky; bottom: 0; left: 0; right: 0;
+    background: rgba(12,11,9,0.97); backdrop-filter: blur(12px);
+    border-top: 1px solid #2a2418; padding: 0.7rem 1.5rem;
+    z-index: 500; align-items: center; gap: 0.8rem;
+  }
+  #audio-queue-bar.on { display: flex; }
+  .aqb-label {
+    flex: 1; font-size: 0.75rem; letter-spacing: 0.1em; color: var(--gold-dim);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .aqb-btn {
+    background: transparent; border: 1px solid #2a2820; color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem;
+    letter-spacing: 0.12em; padding: 0.4rem 0.8rem; cursor: pointer;
+    transition: all 0.25s; min-height: 36px; white-space: nowrap;
+  }
+  .aqb-btn:hover { border-color: var(--gold-dim); color: var(--text); }
+  .aqb-btn.stop { border-color: #3a2020; color: #c06060; }
+  .aqb-btn.stop:hover { border-color: var(--red); color: var(--red); }
+  .aqb-dot {
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+    background: var(--gold); animation: gps-pulse 1.2s ease-in-out infinite;
+  }
+
   /* ══ MAPPA ══ */
   .map-section {
     border-top: 1px solid #131210;
@@ -672,6 +699,14 @@
   </div>
 </div>
 
+<!-- AUDIO QUEUE BAR -->
+<div id="audio-queue-bar">
+  <div class="aqb-dot"></div>
+  <div class="aqb-label" id="aqb-label">In riproduzione...</div>
+  <button class="aqb-btn" onclick="audioSkip()">⏭ Salta</button>
+  <button class="aqb-btn stop" onclick="audioStop()">■ Ferma</button>
+</div>
+
 <div id="flash"></div>
 <audio id="strati-audio" preload="none" style="display:none"></audio>
 
@@ -841,90 +876,246 @@ function dbg(msg, color) {
 }
 
 // ══════════════════════════════════════════════
-// AUDIO SYSTEM
+// AUDIO SYSTEM — coda sezioni + voce di qualità
 // ══════════════════════════════════════════════
 
+// Coda audio: array di { text, label }
+const AUDIO_Q = { items: [], current: 0, playing: false };
+
+// Cache voce italiana migliore
+let _bestVoice = null;
+
+function getBestItalianVoice() {
+  if (_bestVoice) return _bestVoice;
+  const voices = window.speechSynthesis?.getVoices() || [];
+  // Priorità: voci premium iOS (Federica, Alice) → qualsiasi IT
+  const priority = ['federica','alice','luca','paola','italian'];
+  for (const name of priority) {
+    const v = voices.find(v => v.lang.startsWith('it') && v.name.toLowerCase().includes(name));
+    if (v) { _bestVoice = v; return v; }
+  }
+  // Fallback: qualsiasi voce italiana
+  const itAny = voices.find(v => v.lang.startsWith('it'));
+  if (itAny) { _bestVoice = itAny; return itAny; }
+  return null;
+}
+
+// Precarica voci appena disponibili
+function preloadVoices() {
+  const voices = window.speechSynthesis?.getVoices() || [];
+  if (voices.length > 0) {
+    _bestVoice = null; // reset cache
+    getBestItalianVoice();
+    const v = getBestItalianVoice();
+    dbg('voci pronte: ' + voices.length + ' — IT: ' + (v ? v.name : 'nessuna'));
+  }
+}
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = preloadVoices;
+  preloadVoices();
+}
+
+function updateQueueBar(label) {
+  const bar = document.getElementById('audio-queue-bar');
+  const lbl = document.getElementById('aqb-label');
+  if (!bar) return;
+  if (label) {
+    bar.classList.add('on');
+    if (lbl) lbl.textContent = label;
+  } else {
+    bar.classList.remove('on');
+  }
+}
+
 function startSilentLoop() {
-  // Avvia il loop silenzioso sull'elemento DOM — lo sblocca per tutta la sessione
   const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
   const a = document.getElementById('strati-audio');
   S._audioEl = a;
   a.src = SILENT; a.loop = true; a.volume = 0;
   a.play()
     .then(() => { dbg('✓ silent loop avviato', '#5a8a5a'); S._audioReady = true; })
-    .catch(e => dbg('✗ silent loop FALLITO: ' + e.message, '#c03030'));
+    .catch(e => dbg('✗ silent loop fallito: ' + e.message, '#c03030'));
 }
 
-function speakWithSystem(text) {
-  dbg('→ voce sistema');
-  if (!S.synth) { dbg('✗ no speechSynthesis', '#c03030'); return; }
-  S.synth.cancel();
+// ── CODA PRINCIPALE ──
+// Aggiunge item alla coda e parte se non sta già suonando
+function queueSpeak(text, label) {
+  if (!text || S.muted) return;
+  AUDIO_Q.items.push({ text, label: label || '▶ In riproduzione' });
+  if (!AUDIO_Q.playing) playNextInQueue();
+}
 
-  function doSpeak(voices) {
-    const u = new SpeechSynthesisUtterance(text.replace(/\n/g, ' '));
-    const itV = voices.find(v => v.lang.startsWith('it'));
-    if (itV) { u.voice = itV; dbg('voce: ' + itV.name); }
-    else { dbg('voce default (' + voices.length + ' disponibili)'); }
-    u.lang = 'it-IT';
-    u.rate = 0.88; u.pitch = 0.92; u.volume = 1;
-    // Workaround iOS: rilancia periodicamente se in corso (Safari si blocca dopo 15s)
-    let kickTimer = null;
-    u.onstart = () => {
-      dbg('▶ sistema OK', '#5a8a5a');
-      setAudioUI(true);
-      kickTimer = setInterval(() => {
-        if (S.synth.speaking) { S.synth.pause(); S.synth.resume(); }
-        else { clearInterval(kickTimer); kickTimer = null; }
-      }, 10000);
-    };
-    u.onend = () => {
-      if (kickTimer) { clearInterval(kickTimer); kickTimer = null; }
-      dbg('■ sistema fine');
-      setAudioUI(false);
-    };
-    u.onerror = (e) => {
-      if (kickTimer) { clearInterval(kickTimer); kickTimer = null; }
-      dbg('✗ sistema errore: ' + (e.error||'?'), '#c03030');
-      setAudioUI(false);
-    };
-    S.synth.speak(u);
-    setAudioUI(true);
+function playNextInQueue() {
+  if (AUDIO_Q.current >= AUDIO_Q.items.length) {
+    // Fine coda
+    AUDIO_Q.items = []; AUDIO_Q.current = 0; AUDIO_Q.playing = false;
+    updateQueueBar(null);
+    setAudioUI(false);
+    return;
   }
+  const item = AUDIO_Q.items[AUDIO_Q.current];
+  AUDIO_Q.playing = true;
+  updateQueueBar(item.label + ' (' + (AUDIO_Q.current+1) + '/' + AUDIO_Q.items.length + ')');
+  setAudioUI(true);
+  _speakOne(item.text, () => {
+    AUDIO_Q.current++;
+    // Pausa tra sezioni (800ms)
+    if (AUDIO_Q.current < AUDIO_Q.items.length) {
+      setTimeout(playNextInQueue, 800);
+    } else {
+      AUDIO_Q.items = []; AUDIO_Q.current = 0; AUDIO_Q.playing = false;
+      updateQueueBar(null);
+      setAudioUI(false);
+    }
+  });
+}
 
-  const voices = S.synth.getVoices();
-  if (voices.length > 0) {
-    doSpeak(voices);
+// Salta alla prossima sezione
+function audioSkip() {
+  dbg('skip sezione');
+  _stopCurrentUtterance();
+  AUDIO_Q.current++;
+  if (AUDIO_Q.current < AUDIO_Q.items.length) {
+    setTimeout(playNextInQueue, 300);
   } else {
-    // iOS carica le voci in modo asincrono
-    dbg('attesa voci iOS...');
-    let done = false;
-    S.synth.onvoiceschanged = () => {
-      if (done) return; done = true;
-      S.synth.onvoiceschanged = null;
-      doSpeak(S.synth.getVoices());
-    };
-    // Timeout sicurezza: parla comunque dopo 1.5s
-    setTimeout(() => {
-      if (done) return; done = true;
-      S.synth.onvoiceschanged = null;
-      doSpeak(S.synth.getVoices());
-    }, 1500);
+    AUDIO_Q.items = []; AUDIO_Q.current = 0; AUDIO_Q.playing = false;
+    updateQueueBar(null); setAudioUI(false);
   }
 }
 
-function stopAudio() {
+// Ferma tutto
+function audioStop() {
+  dbg('stop tutto');
+  AUDIO_Q.items = []; AUDIO_Q.current = 0; AUDIO_Q.playing = false;
+  _stopCurrentUtterance();
+  updateQueueBar(null);
+  setAudioUI(false);
+}
+
+function _stopCurrentUtterance() {
+  if (S.synth) S.synth.cancel();
   const a = S._audioEl;
   if (a && !a.loop) {
     try { a.pause(); } catch(e) {}
     if (a._blobUrl) { URL.revokeObjectURL(a._blobUrl); a._blobUrl = null; }
-    // Riavvia il silent loop
     const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
     a.onplay = null; a.onended = null; a.onerror = null;
     a.src = SILENT; a.loop = true; a.volume = 0; a.play().catch(()=>{});
   }
-  if (S.synth) S.synth.cancel();
-  setAudioUI(false);
 }
+
+// Riproduce UN singolo testo, chiama onDone quando finisce
+function _speakOne(text, onDone) {
+  if (S.elKey) {
+    // Prova ElevenLabs
+    const a = S._audioEl;
+    if (!a) { _speakOneSystem(text, onDone); return; }
+    fetch('https://api.elevenlabs.io/v1/text-to-speech/' + S.elVoiceId + '/stream', {
+      method: 'POST',
+      headers: { 'xi-api-key': S.elKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' },
+      body: JSON.stringify({
+        text: text.replace(/
+
++/g, '
+').trim().slice(0, 500),
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: { stability: 0.5, similarity_boost: 0.78, style: 0.3, use_speaker_boost: true }
+      })
+    })
+    .then(async r => {
+      dbg('EL HTTP ' + r.status);
+      if (!r.ok) {
+        if (r.status === 401 || r.status === 403) {
+          try {
+            const errBody = await r.json();
+            const status = errBody?.detail?.status || '';
+            dbg('EL blocked: ' + status, '#f0a030');
+          } catch(e) {}
+          S.elKey = null;
+          const w = document.getElementById('el-warning');
+          if (w) w.style.display = 'block';
+        }
+        throw new Error('HTTP ' + r.status);
+      }
+      return r.blob();
+    })
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      a._blobUrl = url;
+      a.loop = false; a.volume = 1;
+      a.onplay = () => { dbg('▶ EL OK', '#5a8a5a'); };
+      a.onended = () => {
+        if (a._blobUrl) { URL.revokeObjectURL(a._blobUrl); a._blobUrl = null; }
+        const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+        a.onplay = null; a.onended = null; a.onerror = null;
+        a.src = SILENT; a.loop = true; a.volume = 0; a.play().catch(()=>{});
+        if (onDone) onDone();
+      };
+      a.onerror = () => { dbg('EL onerror → sistema', '#c03030'); _speakOneSystem(text, onDone); };
+      a.src = url; a.load();
+      a.play().catch(e => { dbg('play rifiutato: ' + e.name, '#c03030'); _speakOneSystem(text, onDone); });
+    })
+    .catch(err => {
+      dbg('EL fetch err → sistema: ' + err.message, '#c03030');
+      _speakOneSystem(text, onDone);
+    });
+  } else {
+    _speakOneSystem(text, onDone);
+  }
+}
+
+function _speakOneSystem(text, onDone) {
+  dbg('→ voce sistema');
+  const synth = window.speechSynthesis;
+  if (!synth) { if (onDone) onDone(); return; }
+  synth.cancel();
+
+  function doSpeak(voices) {
+    const u = new SpeechSynthesisUtterance(text.replace(/
+/g, ' ').trim());
+    const voice = getBestItalianVoice() || voices.find(v => v.lang.startsWith('it'));
+    if (voice) { u.voice = voice; dbg('voce: ' + voice.name); }
+    u.lang = 'it-IT'; u.rate = 0.9; u.pitch = 1.0; u.volume = 1;
+
+    let kickTimer = null;
+    u.onstart = () => {
+      kickTimer = setInterval(() => {
+        if (synth.speaking) { synth.pause(); synth.resume(); }
+        else { clearInterval(kickTimer); kickTimer = null; }
+      }, 10000);
+    };
+    const finish = () => {
+      if (kickTimer) { clearInterval(kickTimer); kickTimer = null; }
+      if (onDone) onDone();
+    };
+    u.onend = finish;
+    u.onerror = (e) => {
+      dbg('sistema errore: ' + (e.error||'?'), '#c03030');
+      if (kickTimer) { clearInterval(kickTimer); kickTimer = null; }
+      if (onDone) onDone();
+    };
+    synth.speak(u);
+  }
+
+  const voices = synth.getVoices();
+  if (voices.length > 0) {
+    doSpeak(voices);
+  } else {
+    let done = false;
+    synth.onvoiceschanged = () => {
+      if (done) return; done = true;
+      synth.onvoiceschanged = preloadVoices;
+      doSpeak(synth.getVoices());
+    };
+    setTimeout(() => {
+      if (done) return; done = true;
+      synth.onvoiceschanged = preloadVoices;
+      doSpeak(synth.getVoices());
+    }, 1200);
+  }
+}
+
+function stopAudio() { audioStop(); }
 
 function setAudioUI(on) {
   S.isSpeaking = on;
@@ -936,95 +1127,12 @@ function setAudioUI(on) {
   document.getElementById('audio-lbl').textContent = on ? 'In riproduzione — tocca per fermare' : 'Ascolta narrazione';
 }
 
-function speakText(text) {
-  dbg('speakText()');
-  if (S.muted) { dbg('muted', '#f0a030'); return; }
-  if (!text) { dbg('no text', '#c03030'); return; }
-
-  // Assicurati che _audioEl sia inizializzato
-  if (!S._audioEl) S._audioEl = document.getElementById('strati-audio');
-  const a = S._audioEl;
-
-  // Ferma qualsiasi riproduzione in corso
-  if (S.synth) S.synth.cancel();
-  if (!a.loop) { try { a.pause(); } catch(e) {} }
-
-  if (S.elKey) {
-    dbg('EL key trovata → fetch...');
-    const btn = document.getElementById('audio-btn');
-    if (btn) { btn.classList.add('loading'); document.getElementById('audio-lbl').textContent = 'Sintetizzando...'; }
-
-    fetch('https://api.elevenlabs.io/v1/text-to-speech/' + S.elVoiceId + '/stream', {
-      method: 'POST',
-      headers: { 'xi-api-key': S.elKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' },
-      body: JSON.stringify({
-        text: text.replace(/\n\n+/g, '\n').trim().slice(0, 500),
-        model_id: 'eleven_multilingual_v2',
-        voice_settings: { stability: 0.5, similarity_boost: 0.78, style: 0.3, use_speaker_boost: true }
-      })
-    })
-    .then(async r => {
-      dbg('EL HTTP ' + r.status);
-      if (!r.ok) {
-        if (r.status === 401 || r.status === 403) {
-          // Leggi il body per capire il motivo reale
-          try {
-            const errBody = await r.json();
-            const status = errBody?.detail?.status || '';
-            const msg = errBody?.detail?.message || '';
-            if (status === 'detected_unusual_activity') {
-              dbg('EL: attività insolita rilevata (free tier + browser). Usa piano a pagamento per EL.', '#f0a030');
-            } else if (status === 'quota_exceeded') {
-              dbg('EL: quota mensile esaurita', '#f0a030');
-            } else {
-              dbg('EL: ' + (status || 'chiave non valida'), '#f0a030');
-            }
-          } catch(e) {}
-          S.elKey = null; // Disabilita EL per questa sessione → usa voce sistema
-          const w = document.getElementById('el-warning');
-          if (w) w.style.display = 'block';
-        }
-        throw new Error('HTTP ' + r.status);
-      }
-      return r.blob();
-    })
-    .then(blob => {
-      if (btn) btn.classList.remove('loading');
-      dbg('blob ' + Math.round(blob.size/1024) + 'KB → play su elem DOM');
-      const url = URL.createObjectURL(blob);
-      a._blobUrl = url;
-      // Usa STESSO elemento DOM già sbloccato — stop al silent loop e avvia blob
-      a.loop = false;
-      a.volume = 1;
-      a.onplay = () => { dbg('▶ EL OK', '#5a8a5a'); setAudioUI(true); };
-      a.onended = () => {
-        dbg('■ EL fine');
-        setAudioUI(false);
-        if (a._blobUrl) { URL.revokeObjectURL(a._blobUrl); a._blobUrl = null; }
-        // Riavvia silent loop
-        const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-        a.onplay = null; a.onended = null; a.onerror = null;
-        a.src = SILENT; a.loop = true; a.volume = 0; a.play().catch(()=>{});
-      };
-      a.onerror = () => { dbg('✗ EL onerror → sistema', '#c03030'); speakWithSystem(text); };
-      a.src = url;
-      a.load();
-      a.play()
-        .then(() => dbg('✓ play OK', '#5a8a5a'))
-        .catch(e => { dbg('✗ play RIFIUTATO: ' + e.name, '#c03030'); speakWithSystem(text); });
-    })
-    .catch(err => {
-      if (btn) btn.classList.remove('loading');
-      dbg('✗ fetch: ' + err.message + ' → voce sistema', '#c03030');
-      // Ferma il silent loop prima di usare speechSynthesis
-      const a2 = S._audioEl;
-      if (a2 && a2.loop) { try { a2.pause(); } catch(e) {} }
-      speakWithSystem(text);
-    });
-  } else {
-    dbg('no EL key → sistema');
-    speakWithSystem(text);
-  }
+// speakText compatibilità: resetta coda e parla subito
+function speakText(text, label) {
+  if (S.muted || !text) return;
+  AUDIO_Q.items = []; AUDIO_Q.current = 0; AUDIO_Q.playing = false;
+  _stopCurrentUtterance();
+  queueSpeak(text, label || '▶ Narrazione');
 }
 
 function toggleMute() {
@@ -1088,26 +1196,37 @@ Approfondisci con dati storici precisi.`;
       { key: 'aneddoti', id: 'app-aneddoti', textId: 'app-aneddoti-text' },
     ];
 
-    // Raccoglie testo completo per audio
-    let fullAppText = '';
+    // Mostra sezioni con typewrite e costruisce coda audio per sezione
+    const sectionLabels = {
+      cronologia: '📅 Cronologia',
+      personaggi: '👤 Personaggi',
+      connessioni: '📍 Luoghi vicini',
+      aneddoti: '✦ Aneddoti'
+    };
 
+    // Reset coda audio (ferma narrazione corrente)
+    AUDIO_Q.items = []; AUDIO_Q.current = 0; AUDIO_Q.playing = false;
+    _stopCurrentUtterance();
+
+    let firstDelay = 600; // ms prima di iniziare la lettura audio
     for (const s of sections) {
       if (data[s.key] && data[s.key] !== 'null') {
         const wrap = document.getElementById(s.id);
         const textEl = document.getElementById(s.textId);
         wrap.style.display = 'block';
         typewrite(data[s.key], textEl, 18);
-        fullAppText += data[s.key] + ' ';
+        // Aggiungi alla coda audio come sezione separata
+        if (!S.muted) {
+          AUDIO_Q.items.push({ text: data[s.key], label: sectionLabels[s.key] || s.key });
+        }
       }
     }
 
     btn.classList.add('done'); // nasconde il pulsante
 
-    // Audio: aspetta la fine del typewrite della prima sezione, poi legge tutto
-    if (!S.muted && fullAppText.trim()) {
-      const firstSectionLen = (data.cronologia || data.personaggi || data.connessioni || data.aneddoti || '').length;
-      const estimatedReadTime = firstSectionLen * 18 + 500; // ms per leggere prima sezione
-      setTimeout(() => speakText(fullAppText.trim()), Math.max(estimatedReadTime, 1500));
+    // Avvia coda audio dopo un breve delay (il typewrite sta già partendo)
+    if (!S.muted && AUDIO_Q.items.length > 0) {
+      setTimeout(() => playNextInQueue(), firstDelay);
     }
 
   } catch(e) {
@@ -1421,7 +1540,7 @@ async function generateFrag(lat,lon,reason) {
     addHistory({lat,lon,place:cached.place,epoch:cached.epoch,text:cached.text});
     addMapMarker(lat,lon,cached.place,S.fragCount);
     doFlash(); vibrate([60,30,60]);
-    if (!S.muted && cached.text) speakText(cached.text);
+    if (!S.muted && cached.text) setTimeout(() => speakText(cached.text, '▶ ' + (cached.place || 'Narrazione')), 400);
     typewrite(cached.text, document.getElementById('story-text'), 25, ()=>{
       document.getElementById('approfondisci-btn').style.display='flex';
     });
@@ -1529,8 +1648,10 @@ Genera la narrazione per questa posizione esatta.`;
 
     document.getElementById('gen-wrap').classList.remove('on');
 
-    // ── AUDIO: parte subito ──
-    if (!S.muted && parsed.text) speakText(parsed.text);
+    // ── AUDIO: parte subito (piccolo delay per iOS audio context) ──
+    if (!S.muted && parsed.text) {
+      setTimeout(() => speakText(parsed.text, '▶ ' + (parsed.place || 'Narrazione')), 400);
+    }
 
     const speed=({drammatico:20,documentaristico:26,poetico:30,distaccato:22,solenne:28})[parsed.tone]||25;
     typewrite(parsed.text, document.getElementById('story-text'), speed, ()=>{
@@ -1625,16 +1746,14 @@ function startApp() {
   startSilentLoop();
 
   if (window.speechSynthesis) {
-    // Pre-carica le voci (essenziale su iOS Safari)
-    window.speechSynthesis.getVoices();
-    window.speechSynthesis.onvoiceschanged = () => {
-      const vv = window.speechSynthesis.getVoices();
-      dbg('voci caricate: ' + vv.length + (vv.find(v=>v.lang.startsWith('it'))?' (IT ✓)':' (no IT)'));
-    };
+    // Pre-carica le voci (essenziale su iOS — devono essere pronte prima della narrazione)
+    preloadVoices();
+    window.speechSynthesis.onvoiceschanged = preloadVoices;
     // Utterance silenziosa per sbloccare il contesto audio (iOS richiede gesto utente)
-    const w = new SpeechSynthesisUtterance(' ');
-    w.volume = 0; w.rate = 1;
+    const w = new SpeechSynthesisUtterance('  ');
+    w.volume = 0; w.rate = 1; w.lang = 'it-IT';
     window.speechSynthesis.speak(w);
+    w.onend = () => { dbg('warm-up completato, voci: ' + window.speechSynthesis.getVoices().length); };
     dbg('speechSynthesis warm-up inviato');
   }
 
