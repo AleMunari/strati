@@ -233,6 +233,7 @@
   @keyframes gdot{0%,100%{opacity:0.15;}50%{opacity:1;}}
 
   .story-text { font-size:var(--fs-lg); line-height:var(--lh); color:var(--text); min-height:80px; }
+  .story-text.no-data { color: var(--muted); font-size: var(--fs-base); }
 
   .cursor-blink {
     display:inline-block; width:9px; height:1em;
@@ -939,9 +940,30 @@ Approfondisci con dati storici precisi.`;
 // GPS
 // ══════════════════════════════════════════════
 function startTracking() {
-  if (!navigator.geolocation) { document.getElementById('gps-txt').textContent='GPS non disponibile'; return; }
-  S.watchId = navigator.geolocation.watchPosition(onPos, onErr,
-    { enableHighAccuracy:true, maximumAge:3000, timeout:15000 });
+  if (!navigator.geolocation) {
+    document.getElementById('gps-txt').textContent='GPS non disponibile';
+    return;
+  }
+  // iOS richiede prima getCurrentPosition come warm-up prima di watchPosition
+  document.getElementById('gps-txt').textContent='richiesta permesso...';
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      // Permesso ottenuto — avvia il watch continuo
+      onPos(pos);
+      S.watchId = navigator.geolocation.watchPosition(onPos, onErr,
+        { enableHighAccuracy:true, maximumAge:3000, timeout:20000 });
+    },
+    (err) => {
+      onErr(err);
+      // Su iOS se l'utente nega, suggerisci come abilitare
+      if (err.code === 1) { // PERMISSION_DENIED
+        document.getElementById('gps-txt').textContent='GPS negato';
+        document.getElementById('search-txt').textContent=
+          'Abilita posizione: Impostazioni → Safari → Posizione → Consenti';
+      }
+    },
+    { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
+  );
 }
 
 function onPos(pos) {
@@ -979,7 +1001,14 @@ function onPos(pos) {
   checkTrigger(lat,lon);
 }
 
-function onErr(e) { document.getElementById('gps-txt').textContent=e.message.slice(0,20); }
+function onErr(e) {
+  const msgs = {
+    1: 'GPS negato — abilita in Impostazioni',
+    2: 'GPS non disponibile',
+    3: 'GPS timeout — vai all\'aperto'
+  };
+  document.getElementById('gps-txt').textContent = msgs[e.code] || e.message.slice(0,25);
+}
 
 function checkTrigger(lat,lon) {
   if (S.isGenerating) return;
@@ -1127,10 +1156,11 @@ async function fetchHistoricalData(lat,lon) {
 // ══════════════════════════════════════════════
 async function fetchAddress(lat, lon) {
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=it&zoom=18`);
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=it&zoom=18&addressdetails=1`);
     const d = await r.json();
     const a = d.address || {};
-    const road = a.road || a.pedestrian || a.footway || a.path || '';
+    // Priorità: strada con numero civico
+    const road = a.road || a.pedestrian || a.footway || a.cycleway || a.path || '';
     const num = a.house_number ? ' ' + a.house_number : '';
     const addr = road ? road + num : '';
     if (addr) {
@@ -1177,6 +1207,7 @@ async function generateFrag(lat,lon,reason) {
   S.isGenerating=true; S.currentSources=[]; S.currentApprofondimento=null;
   document.getElementById('gen-wrap').classList.add('on');
   document.getElementById('story-text').innerHTML='';
+  document.getElementById('story-text').classList.remove('no-data');
   document.getElementById('sources-wrap').classList.remove('on');
   document.getElementById('place-photo-wrap').classList.remove('on');
   document.getElementById('place-photo-wrap').innerHTML='';
@@ -1263,7 +1294,36 @@ REGOLE TESTO:
 
   const h=new Date().getHours();
   const tod=h<6?'notte':h<12?'mattina':h<18?'pomeriggio':'sera';
-  const noData=histData.wikiData.length===0&&histData.osmData.length===0;
+  const noData = histData.wikiData.length===0 && histData.osmData.length===0;
+
+  // ── NESSUN DATO: mostra messaggio onesto senza chiamare Groq ──
+  if (noData) {
+    const addr = document.getElementById('frag-address').textContent || document.getElementById('addr-strip').textContent || 'questa zona';
+    // Cerca luoghi nelle vicinanze allargando il raggio su Wikipedia
+    let nearby = '';
+    try {
+      const nr = await fetch(`https://it.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=2000&gslimit=3&format=json&origin=*`);
+      const nd = await nr.json();
+      const places = (nd.query?.geosearch || []).filter(p => p.dist > 100);
+      if (places.length > 0) {
+        nearby = '\n\nNelle vicinanze:\n' + places.map(p => `→ ${p.title} (a ~${Math.round(p.dist)}m)`).join('\n');
+      }
+    } catch(e) {}
+
+    const noDataText = `In questa zona — ${addr} — non sono disponibili informazioni storiche documentate.${nearby}`;
+    S.currentText = noDataText;
+    document.getElementById('gen-wrap').classList.remove('on');
+    document.getElementById('story-text').classList.add('no-data');
+    document.getElementById('frag-place').textContent = addr || 'Zona non mappata';
+    document.getElementById('epoch-val').textContent = '—';
+    typewrite(noDataText, document.getElementById('story-text'), 22, ()=>{
+      document.getElementById('approfondisci-btn').style.display='none'; // non ha senso approfondire
+    });
+    addHistory({lat, lon, place: addr || 'Zona non mappata', epoch:'—', text: noDataText});
+    addMapMarker(lat, lon, addr || 'Zona non mappata', S.fragCount);
+    S.isGenerating = false;
+    return;
+  }
 
   let wikiStr='';
   if (histData.wikiData.length>0) {
@@ -1276,7 +1336,6 @@ REGOLE TESTO:
 
   const userPrompt=`POSIZIONE: ${lat.toFixed(5)}°N, ${lon.toFixed(5)}°E
 Distanza percorsa: ${Math.round(S.totalDist)}m · Ora: ${timeStr()} (${tod}) · Luogo n.${S.fragCount}
-${noData?'\nNESSUN DATO TROVATO — racconta onestamente cosa potrebbe esserci stato, senza inventare fatti specifici.':''}
 ${wikiStr}
 ${osmStr}
 
