@@ -443,6 +443,19 @@
 
 <!-- SPLASH -->
 <div id="splash">
+  <!-- PULSANTE IN CIMA -->
+  <div style="width:100%;max-width:340px;display:flex;flex-direction:column;align-items:center;gap:0.5rem;margin-bottom:1.5rem;">
+    <button class="start-btn" id="start-btn" style="margin-top:0;width:100%;letter-spacing:0.2em;" onclick="unifiedStart()">
+      <span id="start-btn-label">🔑 Usa Passkey</span>
+    </button>
+    <div class="key-st" id="unified-st" style="text-align:center;min-height:1.1rem;"></div>
+    <div id="manual-start-link" style="display:none;gap:0;">
+      <span style="font-size:0.75rem;color:var(--muted);letter-spacing:0.12em;cursor:pointer;text-decoration:underline;text-decoration-color:#3a3830;" onclick="startAppDirect()">Entra senza salvare</span>
+      <span style="font-size:0.75rem;color:#3a3830;letter-spacing:0.12em;"> · </span>
+      <span style="font-size:0.75rem;color:var(--muted);letter-spacing:0.12em;cursor:pointer;" onclick="bioClearInline()">✕ dimentica</span>
+    </div>
+  </div>
+
   <div class="s-eyebrow">Una camminata nella memoria</div>
   <div class="s-title">STRATI</div>
   <div class="s-sub">Storia viva sotto i tuoi piedi</div>
@@ -463,7 +476,7 @@
     <div class="key-st req" id="gem-st">→ Ottienila gratis su console.groq.com</div>
   </div>
 
-  <!-- ELEVENLABS KEY — OBBLIGATORIA per narrazione vocale -->
+  <!-- ELEVENLABS KEY — voce narrante -->
   <div class="key-block">
     <span class="key-lbl">🎙 ElevenLabs API Key — voce narrante</span>
     <div class="key-row">
@@ -473,23 +486,10 @@
     <div class="key-st req" id="el-st">→ Ottienila su elevenlabs.io</div>
   </div>
 
-  <!-- PULSANTE UNICO: Passkey + Start -->
-  <div style="margin-top:2.5rem;width:100%;max-width:340px;display:flex;flex-direction:column;align-items:center;gap:0.6rem;">
-    <button class="start-btn" id="start-btn" style="margin-top:0;width:100%;letter-spacing:0.2em;" onclick="unifiedStart()">
-      <span id="start-btn-label">🔑 Usa Passkey</span>
-    </button>
-    <div class="key-st" id="unified-st" style="text-align:center;min-height:1.1rem;"></div>
-    <div id="manual-start-link" style="display:none;">
-      <span style="font-size:0.75rem;color:var(--muted);letter-spacing:0.12em;cursor:pointer;text-decoration:underline;text-decoration-color:#3a3830;" onclick="startAppDirect()">Entra senza salvare</span>
-      <span style="font-size:0.75rem;color:#3a3830;letter-spacing:0.12em;"> · </span>
-      <span style="font-size:0.75rem;color:var(--muted);letter-spacing:0.12em;cursor:pointer;" onclick="bioClearInline()" title="Elimina chiavi salvate">✕ dimentica</span>
-    </div>
-  </div>
   <div class="s-warning">
     Usa le cuffie · Cammina in luoghi sicuri<br>
     Dati storici da Wikipedia e OpenStreetMap
   </div>
-  <!-- GPS NEGATO — mostrato solo se permesso già rifiutato -->
   <div id="gps-denied-msg" style="display:none;margin-top:1.2rem;width:100%;max-width:340px;background:#1a0e0e;border:1px solid #5a2020;padding:1rem 1.2rem;">
     <div style="font-size:0.78rem;color:#c07070;letter-spacing:0.08em;line-height:1.9;">
       ⚠ GPS bloccato su questo browser.<br>
@@ -811,7 +811,25 @@ async function loadItalianVoice(key) {
   } catch(e) {}
 }
 
-// speakWithEL e playBlob integrati in speakText
+// ══════════════════════════════════════════════
+// AUDIO SYSTEM
+// iOS Safari blocca .play() fuori da gesti utente.
+// Soluzione: all'avvio parte un loop silenzioso infinito
+// che mantiene la pagina "trusted". Il blob EL viene
+// riprodotto con un nuovo elemento Audio() creato nel .then()
+// che iOS permette perché c'è già audio attivo sulla pagina.
+// ══════════════════════════════════════════════
+
+function startSilentLoop() {
+  // WAV silenzioso 1 secondo in loop — mantiene il permesso audio attivo
+  const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+  const a = document.getElementById('strati-audio');
+  a.src = SILENT;
+  a.loop = true;
+  a.volume = 0;
+  a.play().catch(() => {}); // silenzioso
+  S._silentLoop = a;
+}
 
 function speakWithSystem(text) {
   if (!S.synth) return;
@@ -819,7 +837,7 @@ function speakWithSystem(text) {
   const u = new SpeechSynthesisUtterance(text.replace(/\n/g, ' '));
   const itV = S.synth.getVoices().find(v => v.lang.startsWith('it'));
   if (itV) u.voice = itV;
-  u.rate = 0.85; u.pitch = 0.9;
+  u.rate = 0.85; u.pitch = 0.92;
   u.onstart = () => setAudioUI(true);
   u.onend = u.onerror = () => setAudioUI(false);
   S.synth.speak(u);
@@ -827,7 +845,7 @@ function speakWithSystem(text) {
 }
 
 function stopAudio() {
-  if (S.currentAudio) {
+  if (S.currentAudio && S.currentAudio !== S._silentLoop) {
     try { S.currentAudio.pause(); } catch(e) {}
     if (S.currentAudio._blobUrl) { URL.revokeObjectURL(S.currentAudio._blobUrl); S.currentAudio._blobUrl = null; }
     S.currentAudio = null;
@@ -850,16 +868,10 @@ function speakText(text) {
   if (S.muted || !text) return;
   stopAudio();
 
-  if (!S._audioEl) S._audioEl = document.getElementById('strati-audio');
-  const a = S._audioEl;
-
   if (S.elKey) {
-    // iOS fix: avvia play subito (src vuota) per mantenere il "user gesture trust",
-    // poi swappa la src con il blob ElevenLabs quando arriva
     const btn = document.getElementById('audio-btn');
     if (btn) { btn.classList.add('loading'); document.getElementById('audio-lbl').textContent = 'Sintetizzando...'; }
 
-    // Avvia fetch in background
     fetch(`https://api.elevenlabs.io/v1/text-to-speech/${S.elVoiceId}/stream`, {
       method: 'POST',
       headers: { 'xi-api-key': S.elKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' },
@@ -868,24 +880,30 @@ function speakText(text) {
         model_id: 'eleven_multilingual_v2',
         voice_settings: { stability: 0.5, similarity_boost: 0.78, style: 0.3, use_speaker_boost: true }
       })
-    }).then(r => {
-      if (!r.ok) throw new Error('EL ' + r.status);
-      return r.blob();
-    }).then(blob => {
+    })
+    .then(r => { if (!r.ok) throw new Error('EL ' + r.status); return r.blob(); })
+    .then(blob => {
+      if (btn) btn.classList.remove('loading');
       const url = URL.createObjectURL(blob);
+      // Nuovo elemento Audio — iOS lo permette perché il silent loop è attivo
+      const a = new Audio(url);
       a._blobUrl = url;
       S.currentAudio = a;
       a.onplay = () => setAudioUI(true);
-      a.onended = () => { setAudioUI(false); if (a._blobUrl) { URL.revokeObjectURL(a._blobUrl); a._blobUrl = null; } S.currentAudio = null; };
-      a.onerror = () => { setAudioUI(false); speakWithSystem(text); };
-      a.src = url;
-      a.load();
-      return a.play();
-    }).then(() => {
+      a.onended = a.onerror = () => {
+        setAudioUI(false);
+        if (a._blobUrl) { URL.revokeObjectURL(a._blobUrl); a._blobUrl = null; }
+        if (S.currentAudio === a) S.currentAudio = null;
+      };
+      a.play().catch(e => {
+        console.warn('EL play failed:', e.message, '→ fallback sistema');
+        setAudioUI(false);
+        speakWithSystem(text);
+      });
+    })
+    .catch(err => {
       if (btn) btn.classList.remove('loading');
-    }).catch(err => {
-      console.warn('EL failed, fallback system:', err);
-      if (btn) btn.classList.remove('loading');
+      console.warn('EL fetch failed:', err.message, '→ fallback sistema');
       speakWithSystem(text);
     });
   } else {
@@ -1497,27 +1515,15 @@ function startApp() {
     alert('Inserisci e verifica la Groq API Key prima di iniziare.'); return;
   }
 
-  // ── SBLOCCO AUDIO iOS — tutto sincrono dentro l'onclick ──
-  const audioEl = document.getElementById('strati-audio');
-  S._audioEl = audioEl;
+  // Avvia loop silenzioso — sblocca audio iOS per tutta la sessione
+  startSilentLoop();
 
-  // Tiny silent WAV per sbloccare l'elemento audio DOM
-  audioEl.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-  audioEl.volume = 0;
-  const warmup = audioEl.play();
-  if (warmup) warmup.then(() => {
-    audioEl.pause();
-    audioEl.volume = 1;
-    audioEl.src = '';
-    S._audioUnlocked = true;
-  }).catch(() => { S._audioUnlocked = false; });
-
-  // SpeechSynthesis: carica voci e sblocca
+  // SpeechSynthesis: pre-carica voci
   if (window.speechSynthesis) {
     window.speechSynthesis.getVoices();
-    const warmUtterance = new SpeechSynthesisUtterance(' ');
-    warmUtterance.volume = 0;
-    window.speechSynthesis.speak(warmUtterance);
+    const w = new SpeechSynthesisUtterance(' ');
+    w.volume = 0;
+    window.speechSynthesis.speak(w);
   }
 
   S.startTime = new Date();
