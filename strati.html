@@ -848,76 +848,78 @@ function startSilentLoop() {
     .catch(e => dbg('✗ silent loop FALLITO: ' + e.message, '#c03030'));
 }
 
-// ── GOOGLE TTS — fallback gratuito, nessuna chiave, funziona su iOS ──
-function speakWithGoogle(text) {
-  dbg('→ Google TTS');
-  const a = S._audioEl;
-  if (!a) { dbg('✗ no audio element', '#c03030'); return; }
-
-  const btn = document.getElementById('audio-btn');
-  if (btn) { btn.classList.add('loading'); document.getElementById('audio-lbl').textContent = 'Caricamento audio...'; }
-
-  // Spezza il testo in chunk da max 200 caratteri (limite Google TTS)
-  const chunks = _splitTextChunks(text.replace(/\n/g, '. ').trim(), 180);
-  dbg('Google TTS: ' + chunks.length + ' chunk');
-  _playGoogleChunks(chunks, 0, a, btn);
-}
-
-function _splitTextChunks(text, maxLen) {
-  const chunks = [];
-  let remaining = text;
-  while (remaining.length > 0) {
-    if (remaining.length <= maxLen) { chunks.push(remaining); break; }
-    // Taglia al punto/virgola/spazio più vicino
-    let cut = remaining.lastIndexOf('.', maxLen);
-    if (cut < 80) cut = remaining.lastIndexOf(',', maxLen);
-    if (cut < 80) cut = remaining.lastIndexOf(' ', maxLen);
-    if (cut < 0) cut = maxLen;
-    chunks.push(remaining.slice(0, cut + 1).trim());
-    remaining = remaining.slice(cut + 1).trim();
-  }
-  return chunks.filter(c => c.length > 0);
-}
-
-function _playGoogleChunks(chunks, idx, a, btn) {
-  if (idx >= chunks.length) {
-    dbg('■ Google TTS fine');
-    if (btn) btn.classList.remove('loading');
-    setAudioUI(false);
-    _restartSilentLoop();
-    return;
-  }
-  const chunk = chunks[idx];
-  const url = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=it&client=tw-ob&q=' + encodeURIComponent(chunk);
-  
-  a.loop = false; a.volume = 1;
-  a.onplay = () => {
-    if (btn) btn.classList.remove('loading');
-    dbg('▶ Google TTS chunk ' + (idx+1) + '/' + chunks.length, '#5a8a5a');
-    setAudioUI(true);
-  };
-  a.onended = () => {
-    a.onplay = null; a.onended = null; a.onerror = null;
-    setTimeout(() => _playGoogleChunks(chunks, idx + 1, a, btn), 150);
-  };
-  a.onerror = (e) => {
-    dbg('✗ Google TTS errore chunk ' + (idx+1) + ': ' + (e.message||'?'), '#c03030');
-    a.onplay = null; a.onended = null; a.onerror = null;
-    // Salta chunk e continua
-    setTimeout(() => _playGoogleChunks(chunks, idx + 1, a, btn), 100);
-  };
-  a.src = url;
-  a.load();
-  a.play().catch(e => {
-    dbg('✗ Google play rifiutato: ' + e.name, '#c03030');
-    _restartSilentLoop();
-    setAudioUI(false);
-  });
-}
-
+// ── SPEECH SYNTHESIS — fallback, SOLO da tap diretto utente ──
+// iOS richiede che speak() sia chiamato direttamente da un gesto utente.
+// Per questo NON viene mai chiamato in automatico, solo da speakCurrent().
 function speakWithSystem(text) {
-  // Fallback → Google TTS (sempre funzionante, no chiave)
-  speakWithGoogle(text);
+  dbg('→ speechSynthesis (tap diretto)');
+  const synth = window.speechSynthesis;
+  if (!synth) { dbg('✗ no speechSynthesis', '#c03030'); return; }
+
+  // Ferma silent loop prima — i due sistemi si contendono il canale iOS
+  const a = S._audioEl;
+  if (a) { try { a.pause(); a.volume = 0; } catch(e) {} }
+
+  synth.cancel();
+
+  function _doSpeak(voices) {
+    const itV = voices.find(v => v.lang === 'it-IT' && v.localService)  // voce locale = migliore
+             || voices.find(v => v.lang.startsWith('it'));
+    if (itV) dbg('voce: ' + itV.name);
+    else dbg('nessuna voce IT (' + voices.length + ' disponibili)');
+
+    // Dummy silenziosa — workaround iOS prima utterance muta
+    const dummy = new SpeechSynthesisUtterance(' ');
+    dummy.volume = 0;
+    if (itV) dummy.voice = itV;
+    synth.speak(dummy);
+
+    const u = new SpeechSynthesisUtterance(text.replace(/\n/g, '. ').trim());
+    if (itV) u.voice = itV;
+    u.lang = 'it-IT'; u.rate = 0.88; u.pitch = 1.0; u.volume = 1.0;
+
+    // Keepalive — Safari blocca speechSynthesis se schermo spento
+    let keepAlive = null;
+    u.onstart = () => {
+      setAudioUI(true);
+      dbg('▶ speechSynthesis OK', '#5a8a5a');
+      keepAlive = setInterval(() => {
+        if (synth.paused) synth.resume();
+      }, 5000);
+    };
+    u.onend = () => {
+      if (keepAlive) { clearInterval(keepAlive); keepAlive = null; }
+      dbg('■ speechSynthesis fine');
+      setAudioUI(false);
+      _restartSilentLoop();
+    };
+    u.onerror = (e) => {
+      if (keepAlive) { clearInterval(keepAlive); keepAlive = null; }
+      dbg('✗ speechSynthesis errore: ' + (e.error || '?'), '#c03030');
+      setAudioUI(false);
+      _restartSilentLoop();
+    };
+    synth.speak(u);
+    setAudioUI(true);
+  }
+
+  const voices = synth.getVoices();
+  if (voices.length > 0) {
+    _doSpeak(voices);
+  } else {
+    dbg('attesa voci iOS...');
+    let done = false;
+    synth.onvoiceschanged = () => {
+      if (done) return; done = true;
+      synth.onvoiceschanged = null;
+      _doSpeak(synth.getVoices());
+    };
+    setTimeout(() => {
+      if (done) return; done = true;
+      synth.onvoiceschanged = null;
+      _doSpeak(synth.getVoices());
+    }, 1200);
+  }
 }
 
 function _restartSilentLoop() {
@@ -1036,7 +1038,12 @@ function speakCurrent() {
   dbg('speakCurrent() tap — isSpeaking=' + S.isSpeaking + ' muted=' + S.muted + ' hasText=' + !!S.currentText);
   if (S.isSpeaking) { stopAudio(); setAudioUI(false); return; }
   if (!S.currentText || S.muted) return;
-  speakText(S.currentText);
+  // Se non c'è EL, usa speechSynthesis direttamente dal tap (gesto utente = funziona su iOS)
+  if (!S.elKey) {
+    speakWithSystem(S.currentText);
+  } else {
+    speakText(S.currentText);
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -1385,6 +1392,13 @@ async function generateFrag(lat,lon,reason) {
   document.getElementById('approfondisci-btn').style.display='none';
   document.getElementById('approfondisci-btn').className='approfondisci-btn';
   document.getElementById('approfondimento-wrap').classList.remove('on');
+  // Nascondi pulsante audio e mostra "in scrittura..."
+  const _ab = document.getElementById('audio-btn');
+  if (_ab) { _ab.style.opacity='0.35'; _ab.style.pointerEvents='none'; }
+  const _al = document.getElementById('audio-lbl');
+  if (_al) _al.textContent = 'Attendi la fine del testo...';
+  const _ai = document.getElementById('audio-icon');
+  if (_ai) _ai.textContent = '…';
   ['app-cronologia','app-personaggi','app-connessioni','app-aneddoti'].forEach(id=>{
     document.getElementById(id).style.display='none';
   });
@@ -1418,9 +1432,13 @@ async function generateFrag(lat,lon,reason) {
     addHistory({lat,lon,place:cached.place,epoch:cached.epoch,text:cached.text});
     addMapMarker(lat,lon,cached.place,S.fragCount);
     doFlash(); vibrate([60,30,60]);
-    if (!S.muted && cached.text) speakText(cached.text);
+    // auto-speak rimosso: iOS richiede gesto utente diretto sul pulsante ▶
     typewrite(cached.text, document.getElementById('story-text'), 25, ()=>{
       document.getElementById('approfondisci-btn').style.display='flex';
+      const ab = document.getElementById('audio-btn');
+      if (ab) { ab.style.opacity='1'; ab.style.pointerEvents='auto'; }
+      document.getElementById('audio-icon').textContent = '▶';
+      document.getElementById('audio-lbl').textContent = 'Ascolta narrazione';
     });
     S.isGenerating=false;
     return;
@@ -1527,11 +1545,16 @@ Genera la narrazione per questa posizione esatta.`;
     document.getElementById('gen-wrap').classList.remove('on');
 
     // ── AUDIO: parte subito ──
-    if (!S.muted && parsed.text) speakText(parsed.text);
+    // auto-speak rimosso: iOS richiede gesto utente diretto sul pulsante ▶
 
     const speed=({drammatico:20,documentaristico:26,poetico:30,distaccato:22,solenne:28})[parsed.tone]||25;
     typewrite(parsed.text, document.getElementById('story-text'), speed, ()=>{
       document.getElementById('approfondisci-btn').style.display='flex';
+      // Riabilita pulsante audio
+      const ab = document.getElementById('audio-btn');
+      if (ab) { ab.style.opacity='1'; ab.style.pointerEvents='auto'; }
+      document.getElementById('audio-icon').textContent = '▶';
+      document.getElementById('audio-lbl').textContent = 'Ascolta narrazione';
     });
 
   } catch(e) {
