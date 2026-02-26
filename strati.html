@@ -811,82 +811,86 @@ async function loadItalianVoice(key) {
   } catch(e) {}
 }
 
-async function speakWithEL(text) {
-  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${S.elVoiceId}/stream`, {
-    method:'POST',
-    headers:{'xi-api-key':S.elKey,'Content-Type':'application/json','Accept':'audio/mpeg'},
-    body: JSON.stringify({
-      text: text.replace(/\n\n+/g,'\n').trim(),
-      model_id:'eleven_multilingual_v2',
-      voice_settings:{ stability:0.5, similarity_boost:0.78, style:0.3, use_speaker_boost:true }
-    })
-  });
-  if (!r.ok) throw new Error('EL '+r.status);
-  const blob = await r.blob();
-  playBlob(URL.createObjectURL(blob));
-}
+// speakWithEL e playBlob integrati in speakText
 
 function speakWithSystem(text) {
   if (!S.synth) return;
   S.synth.cancel();
-  const u = new SpeechSynthesisUtterance(text.replace(/\n/g,' '));
-  const itV = S.synth.getVoices().find(v=>v.lang.startsWith('it'));
-  if (itV) u.voice=itV;
-  u.rate=0.85; u.pitch=0.9;
-  u.onstart=()=>setAudioUI(true); u.onend=()=>setAudioUI(false);
-  S.synth.speak(u); setAudioUI(true);
-}
-
-function playBlob(url) {
-  stopAudio();
-  // Riusa sempre lo stesso elemento audio DOM (sbloccato al gesto startApp)
-  if (!S._audioEl) {
-    S._audioEl = document.getElementById('strati-audio');
-  }
-  const a = S._audioEl;
-  a._blobUrl = url;
-  S.currentAudio = a;
-  a.onplay = () => setAudioUI(true);
-  a.onended = a.onerror = () => {
-    setAudioUI(false);
-    if (a._blobUrl) { URL.revokeObjectURL(a._blobUrl); a._blobUrl = null; }
-    S.currentAudio = null;
-  };
-  a.src = url;
-  const p = a.play();
-  if (p && p.catch) p.catch(e => {
-    console.warn('Audio play failed:', e);
-    // Fallback a voce di sistema
-    speakWithSystem(S.currentText || '');
-  });
+  const u = new SpeechSynthesisUtterance(text.replace(/\n/g, ' '));
+  const itV = S.synth.getVoices().find(v => v.lang.startsWith('it'));
+  if (itV) u.voice = itV;
+  u.rate = 0.85; u.pitch = 0.9;
+  u.onstart = () => setAudioUI(true);
+  u.onend = u.onerror = () => setAudioUI(false);
+  S.synth.speak(u);
+  setAudioUI(true);
 }
 
 function stopAudio() {
   if (S.currentAudio) {
-    S.currentAudio.pause();
+    try { S.currentAudio.pause(); } catch(e) {}
     if (S.currentAudio._blobUrl) { URL.revokeObjectURL(S.currentAudio._blobUrl); S.currentAudio._blobUrl = null; }
     S.currentAudio = null;
   }
   if (S.synth) S.synth.cancel();
+  setAudioUI(false);
 }
 
 function setAudioUI(on) {
-  S.isSpeaking=on;
-  document.getElementById('audio-btn').classList.toggle('speaking',on);
-  document.getElementById('audio-btn').classList.remove('loading');
-  document.getElementById('audio-icon').textContent=on?'■':'▶';
-  document.getElementById('audio-lbl').textContent=on?'In riproduzione — tocca per fermare':'Ascolta narrazione';
+  S.isSpeaking = on;
+  const btn = document.getElementById('audio-btn');
+  if (!btn) return;
+  btn.classList.toggle('speaking', on);
+  btn.classList.remove('loading');
+  document.getElementById('audio-icon').textContent = on ? '■' : '▶';
+  document.getElementById('audio-lbl').textContent = on ? 'In riproduzione — tocca per fermare' : 'Ascolta narrazione';
 }
 
-async function speakText(text) {
-  if (S.muted) return;
+function speakText(text) {
+  if (S.muted || !text) return;
   stopAudio();
+
+  if (!S._audioEl) S._audioEl = document.getElementById('strati-audio');
+  const a = S._audioEl;
+
   if (S.elKey) {
-    document.getElementById('audio-btn').classList.add('loading');
-    document.getElementById('audio-lbl').textContent='Sintetizzando...';
-    try { await speakWithEL(text); }
-    catch(e) { document.getElementById('audio-btn').classList.remove('loading'); speakWithSystem(text); }
-  } else { speakWithSystem(text); }
+    // iOS fix: avvia play subito (src vuota) per mantenere il "user gesture trust",
+    // poi swappa la src con il blob ElevenLabs quando arriva
+    const btn = document.getElementById('audio-btn');
+    if (btn) { btn.classList.add('loading'); document.getElementById('audio-lbl').textContent = 'Sintetizzando...'; }
+
+    // Avvia fetch in background
+    fetch(`https://api.elevenlabs.io/v1/text-to-speech/${S.elVoiceId}/stream`, {
+      method: 'POST',
+      headers: { 'xi-api-key': S.elKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' },
+      body: JSON.stringify({
+        text: text.replace(/\n\n+/g, '\n').trim(),
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: { stability: 0.5, similarity_boost: 0.78, style: 0.3, use_speaker_boost: true }
+      })
+    }).then(r => {
+      if (!r.ok) throw new Error('EL ' + r.status);
+      return r.blob();
+    }).then(blob => {
+      const url = URL.createObjectURL(blob);
+      a._blobUrl = url;
+      S.currentAudio = a;
+      a.onplay = () => setAudioUI(true);
+      a.onended = () => { setAudioUI(false); if (a._blobUrl) { URL.revokeObjectURL(a._blobUrl); a._blobUrl = null; } S.currentAudio = null; };
+      a.onerror = () => { setAudioUI(false); speakWithSystem(text); };
+      a.src = url;
+      a.load();
+      return a.play();
+    }).then(() => {
+      if (btn) btn.classList.remove('loading');
+    }).catch(err => {
+      console.warn('EL failed, fallback system:', err);
+      if (btn) btn.classList.remove('loading');
+      speakWithSystem(text);
+    });
+  } else {
+    speakWithSystem(text);
+  }
 }
 
 function toggleMute() {
@@ -1243,40 +1247,7 @@ async function fetchAddress(lat, lon) {
 // ══════════════════════════════════════════════
 // FOTO DA WIKIPEDIA (immagine articolo più vicino)
 // ══════════════════════════════════════════════
-// Cerca foto su Wikipedia per nome del luogo (dal testo narrato), NON per coordinate
-async function fetchPlacePhoto(placeName, lat, lon) {
-  if (!placeName || placeName === '—') return null;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 7000);
-  try {
-    const langs = ['it', 'en'];
-    for (const lang of langs) {
-      // Cerca per titolo esatto prima
-      const searchR = await fetch(
-        `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(placeName)}&srlimit=3&format=json&origin=*`,
-        { signal: controller.signal }
-      );
-      const searchD = await searchR.json();
-      const hits = searchD.query?.search || [];
-      for (const hit of hits) {
-        const r2 = await fetch(
-          `https://${lang}.wikipedia.org/w/api.php?action=query&pageids=${hit.pageid}&prop=pageimages&piprop=thumbnail&pithumbsize=900&format=json&origin=*`,
-          { signal: controller.signal }
-        );
-        const d2 = await r2.json();
-        const page = d2.query?.pages?.[hit.pageid];
-        const imgUrl = page?.thumbnail?.source;
-        if (!imgUrl) continue;
-        const u = imgUrl.toLowerCase();
-        const bad = ['logo','flag','coat','wappen','blason','map','schema','plan','icon','picto','symbol','portrait','person','face','.svg','stub','question'];
-        if (bad.some(b => u.includes(b))) continue;
-        clearTimeout(timeout);
-        return { url: imgUrl, caption: hit.title };
-      }
-    }
-    return null;
-  } catch(e) { return null; } finally { clearTimeout(timeout); }
-}
+// Foto rimosse: non è possibile trovare immagini pertinenti in modo affidabile per strade/zone generiche
 
 // ══════════════════════════════════════════════
 // GENERAZIONE
@@ -1325,16 +1296,6 @@ async function generateFrag(lat,lon,reason) {
     addHistory({lat,lon,place:cached.place,epoch:cached.epoch,text:cached.text});
     addMapMarker(lat,lon,cached.place,S.fragCount);
     doFlash(); vibrate([60,30,60]);
-    // Foto dal nome del luogo narrato
-    fetchPlacePhoto(cached.place, lat, lon).then(photo => {
-      if (photo) {
-        document.getElementById('place-photo-wrap').innerHTML =
-          `<div class="place-photo-container"><img class="place-photo" src="${photo.url}" alt="${photo.caption}" loading="lazy" onerror="this.closest('.place-photo-wrap').classList.remove('on')"></div>` +
-          `<div class="place-photo-caption">${photo.caption}</div>`;
-        document.getElementById('place-photo-wrap').classList.add('on');
-      }
-    });
-    // Audio subito
     if (!S.muted && cached.text) speakText(cached.text);
     typewrite(cached.text, document.getElementById('story-text'), 25, ()=>{
       document.getElementById('approfondisci-btn').style.display='flex';
@@ -1443,18 +1404,7 @@ Genera la narrazione per questa posizione esatta.`;
 
     document.getElementById('gen-wrap').classList.remove('on');
 
-    // ── FOTO: cerca per nome del luogo narrato (non per coordinate) ──
-    fetchPlacePhoto(parsed.place, lat, lon).then(photo => {
-      if (photo) {
-        document.getElementById('place-photo-wrap').innerHTML =
-          `<div class="place-photo-container"><img class="place-photo" src="${photo.url}" alt="${photo.caption}" loading="lazy" onerror="this.closest('.place-photo-wrap').classList.remove('on')"></div>` +
-          `<div class="place-photo-caption">${photo.caption}</div>`;
-        document.getElementById('place-photo-wrap').classList.add('on');
-      }
-      // Se photo è null, nessuna foto — il wrap rimane nascosto
-    });
-
-    // ── AUDIO: parte subito (non aspetta il typewrite — iOS blocca audio in callback async) ──
+    // ── AUDIO: parte subito ──
     if (!S.muted && parsed.text) speakText(parsed.text);
 
     const speed=({drammatico:20,documentaristico:26,poetico:30,distaccato:22,solenne:28})[parsed.tone]||25;
@@ -1547,39 +1497,36 @@ function startApp() {
     alert('Inserisci e verifica la Groq API Key prima di iniziare.'); return;
   }
 
-  // ── SBLOCCO AUDIO iOS ── (deve essere eseguito SINCRONO dentro l'onclick)
-  // 1. Elemento <audio> DOM: play silenzioso per sbloccarlo
+  // ── SBLOCCO AUDIO iOS — tutto sincrono dentro l'onclick ──
   const audioEl = document.getElementById('strati-audio');
   S._audioEl = audioEl;
+
+  // Tiny silent WAV per sbloccare l'elemento audio DOM
   audioEl.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-  const unlockPlay = audioEl.play();
-  if (unlockPlay) unlockPlay.then(()=>{ audioEl.pause(); audioEl.src=''; }).catch(()=>{});
+  audioEl.volume = 0;
+  const warmup = audioEl.play();
+  if (warmup) warmup.then(() => {
+    audioEl.pause();
+    audioEl.volume = 1;
+    audioEl.src = '';
+    S._audioUnlocked = true;
+  }).catch(() => { S._audioUnlocked = false; });
 
-  // 2. AudioContext per ElevenLabs blob
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const buf = ctx.createBuffer(1,1,22050);
-    const src = ctx.createBufferSource();
-    src.buffer=buf; src.connect(ctx.destination); src.start(0);
-    S._audioCtxUnlocked = true;
-  } catch(e) {}
-
-  // 3. SpeechSynthesis pre-carica voci
+  // SpeechSynthesis: carica voci e sblocca
   if (window.speechSynthesis) {
     window.speechSynthesis.getVoices();
-    // Parla testo vuoto per sbloccare su iOS
-    const u = new SpeechSynthesisUtterance(' ');
-    u.volume = 0; u.rate = 1;
-    window.speechSynthesis.speak(u);
+    const warmUtterance = new SpeechSynthesisUtterance(' ');
+    warmUtterance.volume = 0;
+    window.speechSynthesis.speak(warmUtterance);
   }
 
   S.startTime = new Date();
   startTracking();
   document.getElementById('splash').classList.add('hidden');
-  setTimeout(()=>{
-    document.getElementById('splash').style.display='none';
+  setTimeout(() => {
+    document.getElementById('splash').style.display = 'none';
     document.getElementById('app').classList.add('visible');
-    setTimeout(()=>{ if(!S.gpsReady) document.getElementById('gps-txt').textContent='GPS lento — vai all\'aperto'; },8000);
+    setTimeout(() => { if (!S.gpsReady) document.getElementById('gps-txt').textContent = 'GPS lento — vai all\'aperto'; }, 8000);
   }, 1200);
 }
 
