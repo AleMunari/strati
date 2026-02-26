@@ -1488,7 +1488,7 @@ async function generateFrag(lat,lon,reason) {
   try { histData=await fetchHistoricalData(lat,lon); } catch(e){}
 
   // ── FILTRA: tieni solo dati entro 120m. Se nulla è vicino, zona non documentata ──
-  const CLOSE_RADIUS = 120;
+  const CLOSE_RADIUS = 500;
   histData.wikiData = histData.wikiData.filter(w => w.dist <= CLOSE_RADIUS);
   // rifiltra sources per tenere solo quelle dei wiki vicini
   const closeTitles = new Set(histData.wikiData.map(w=>w.title));
@@ -1711,6 +1711,8 @@ function selectMode(mode) {
         document.getElementById('splash-map-confirm').classList.add('on');
       });
     }, 100);
+  } else if (isMap && _splashMap) {
+    setTimeout(() => { _splashMap.invalidateSize(); }, 100);
   }
 }
 
@@ -1794,7 +1796,7 @@ function startApp(virtual) {
       if (addr) document.getElementById('addr-strip').textContent = addr;
     });
     document.getElementById('gps-dot').classList.add('lock');
-    triggerFrag(S.virtualPos.lat, S.virtualPos.lon, 'primo_fix');
+    // triggerFrag verrà chiamata dopo che #app è visibile (vedi setTimeout sotto)
   } else {
     startTracking();
   }
@@ -1803,6 +1805,10 @@ function startApp(virtual) {
   setTimeout(() => {
     document.getElementById('splash').style.display = 'none';
     document.getElementById('app').classList.add('visible');
+    if (virtual && S.virtualPos) {
+      // Avvia la generazione DOPO che l'app è visibile
+      triggerFrag(S.virtualPos.lat, S.virtualPos.lon, 'primo_fix');
+    }
     if (!virtual) {
       setTimeout(() => { if (!S.gpsReady) document.getElementById('gps-txt').textContent = 'GPS lento — vai all\'aperto'; }, 8000);
     }
