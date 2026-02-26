@@ -907,9 +907,9 @@ function _doSpeak(text, section, speakId) {
   const voice = _resolveVoice();
   const u = new SpeechSynthesisUtterance(text.replace(/\n+/g, '. ').replace(/\s+/g, ' ').trim());
   u.lang = 'it-IT';
-  u.rate = 0.40;   // velocità: slider a ~40% come nelle tue impostazioni
-  u.pitch = 0.75;  // tono: basso come nelle tue impostazioni
-  u.volume = 0.9;  // volume: alto come nelle tue impostazioni
+  u.rate = 0.52;   // leggermente più veloce, stesso stile Federica/Alice
+  u.pitch = 0.75;  // tono basso
+  u.volume = 0.9;
   if (voice) u.voice = voice; // imposta Federica se trovata
 
   dbg('speak → "' + (voice ? voice.name : 'default sistema') + '" rate=' + u.rate + ' chars=' + text.length);
