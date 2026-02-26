@@ -453,11 +453,21 @@
     Dall'antichità alla cronaca di ieri.
   </div>
 
+  <!-- BIOMETRIA — CARICA (appare in cima se ci sono chiavi salvate) -->
+  <div class="key-block" id="bio-load-block" style="display:none;">
+    <span class="key-lbl">🔐 Chiavi salvate</span>
+    <div class="key-row">
+      <button class="key-btn" style="flex:1;" onclick="bioLoad()">Carica con Face ID / Touch ID</button>
+      <button class="key-btn" onclick="bioClear()" title="Elimina chiavi salvate">✕</button>
+    </div>
+    <div class="key-st" id="bio-load-st"></div>
+  </div>
+
   <!-- GROQ KEY — OBBLIGATORIA -->
   <div class="key-block">
     <span class="key-lbl">✦ Groq API Key — necessaria per la narrazione</span>
     <div class="key-row">
-      <input class="key-inp" id="gem-key" type="password" placeholder="Incolla la tua Groq key...">
+      <input class="key-inp" id="gem-key" type="password" placeholder="Incolla la tua Groq key..." autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false">
       <button class="key-btn" onclick="testOpenAI()">Verifica</button>
     </div>
     <div class="key-st req" id="gem-st">→ Ottienila gratis su console.groq.com</div>
@@ -467,30 +477,30 @@
   <div class="key-block">
     <span class="key-lbl">🎙 ElevenLabs API Key — narrazione vocale (opzionale)</span>
     <div class="key-row">
-      <input class="key-inp" id="el-key" type="password" placeholder="Incolla la tua ElevenLabs key...">
+      <input class="key-inp" id="el-key" type="password" placeholder="Incolla la tua ElevenLabs key..." autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false">
       <button class="key-btn" onclick="testEL()">Verifica</button>
     </div>
     <div class="key-st" id="el-st">Senza chiave: voce di sistema</div>
   </div>
 
-  <!-- BIOMETRIA -->
+  <!-- BIOMETRIA — SALVA (appare dopo aver inserito le chiavi) -->
   <div class="key-block" id="bio-save-block" style="display:none;">
     <button class="key-btn" style="width:100%;" onclick="bioSave()">🔐 Salva chiavi con Face ID / Touch ID</button>
     <div class="key-st" id="bio-save-st">Le chiavi vengono cifrate sul dispositivo</div>
-  </div>
-  <div class="key-block" id="bio-load-block" style="display:none;">
-    <span class="key-lbl">🔐 Chiavi salvate trovate</span>
-    <div class="key-row">
-      <button class="key-btn" style="flex:1;" onclick="bioLoad()">Carica con Face ID / Touch ID</button>
-      <button class="key-btn" onclick="bioClear()" title="Elimina chiavi salvate">✕</button>
-    </div>
-    <div class="key-st" id="bio-load-st"></div>
   </div>
 
   <button class="start-btn" id="start-btn" onclick="if(navigator.geolocation){navigator.geolocation.getCurrentPosition(function(p){window._iosGps=p},function(){},{ enableHighAccuracy:true,timeout:20000,maximumAge:0 })}; startApp()">Inizia a camminare</button>
   <div class="s-warning">
     Usa le cuffie · Cammina in luoghi sicuri<br>
     Dati storici da Wikipedia e OpenStreetMap
+  </div>
+  <!-- GPS NEGATO — mostrato solo se permesso già rifiutato -->
+  <div id="gps-denied-msg" style="display:none;margin-top:1.2rem;width:100%;max-width:340px;background:#1a0e0e;border:1px solid #5a2020;padding:1rem 1.2rem;">
+    <div style="font-size:0.78rem;color:#c07070;letter-spacing:0.08em;line-height:1.9;">
+      ⚠ GPS bloccato su questo browser.<br>
+      <strong style="color:#e08080;">Impostazioni → Privacy e sicurezza<br>→ Localizzazione → Safari → Consenti</strong><br>
+      <span style="color:var(--muted);font-size:0.72rem;">Poi ricarica la pagina.</span>
+    </div>
   </div>
 </div>
 
@@ -1005,12 +1015,19 @@ function onPos(pos) {
 }
 
 function onErr(e) {
-  const msgs = {
-    1: 'GPS negato — abilita in Impostazioni',
-    2: 'GPS non disponibile',
-    3: 'GPS timeout — vai all\'aperto'
-  };
-  document.getElementById('gps-txt').textContent = msgs[e.code] || e.message.slice(0,25);
+  document.getElementById('gps-txt').textContent = e.code === 1 ? 'GPS negato' : e.code === 3 ? 'GPS timeout' : 'GPS errore';
+  if (e.code === 1) {
+    document.getElementById('search-txt').textContent = 'GPS bloccato — vedi istruzioni sotto';
+    // Banner persistente con istruzioni iOS
+    if (!document.getElementById('gps-banner')) {
+      const b = document.createElement('div');
+      b.id = 'gps-banner';
+      b.style.cssText = 'background:#1a0e0e;border-bottom:1px solid #5a2020;padding:0.9rem 1.5rem;font-size:0.78rem;color:#c07070;letter-spacing:0.06em;line-height:1.9;';
+      b.innerHTML = '⚠ GPS bloccato. Per abilitarlo:<br><strong style="color:#e08080;">Impostazioni → Privacy e sicurezza → Localizzazione → Safari → Consenti</strong><br><span style="color:var(--muted);font-size:0.72rem;">Poi ricarica la pagina.</span>';
+      const header = document.querySelector('#app header');
+      if (header) header.after(b);
+    }
+  }
 }
 
 function checkTrigger(lat,lon) {
@@ -1620,7 +1637,23 @@ function bioClear() {
 }
 
 // Avvia controllo biometrico al caricamento
-window.addEventListener('DOMContentLoaded', bioInit);
+window.addEventListener('DOMContentLoaded', () => {
+  bioInit();
+  checkGpsPermission();
+});
+
+function checkGpsPermission() {
+  if (!navigator.permissions) return;
+  navigator.permissions.query({ name: 'geolocation' }).then(result => {
+    if (result.state === 'denied') {
+      document.getElementById('gps-denied-msg').style.display = 'block';
+    }
+    result.onchange = () => {
+      if (result.state === 'denied') document.getElementById('gps-denied-msg').style.display = 'block';
+      else document.getElementById('gps-denied-msg').style.display = 'none';
+    };
+  }).catch(() => {});
+}
 // ══════════════════════════════════════════════
 function saveCache(key, data) {
   try {
