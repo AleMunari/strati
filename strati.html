@@ -52,8 +52,8 @@
   /* ══ SPLASH ══ */
   #splash {
     position:fixed; inset:0; background:#000;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    z-index:2000; transition:opacity 2s ease; padding:2rem;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+    z-index:2000; transition:opacity 2s ease; padding:2rem 2rem 4rem;
     overflow-y: auto;
   }
   #splash.hidden { opacity:0; pointer-events:none; }
@@ -122,7 +122,7 @@
     font-family:'IBM Plex Mono',monospace; font-size:0.9rem;
     letter-spacing:0.35em; text-transform:uppercase; cursor:pointer;
     transition:all 0.4s; position:relative; overflow:hidden;
-    min-height:54px; align-self:center;
+    min-height:54px; align-self:center; flex-shrink:0;
   }
   .start-btn::before {
     content:''; position:absolute; inset:0; background:var(--gold-dim);
@@ -134,7 +134,7 @@
   .s-warning {
     margin-top:1.5rem; font-size:0.82rem; color:var(--muted);
     letter-spacing:0.08em; text-align:center; line-height:2;
-    padding-bottom: 2rem;
+    padding-bottom: 5rem;
   }
 
   /* ══ APP ══ */
@@ -483,10 +483,10 @@
     <div class="key-st" id="el-st">Senza chiave: voce di sistema</div>
   </div>
 
-  <!-- BIOMETRIA — SALVA (appare dopo aver inserito le chiavi) -->
-  <div class="key-block" id="bio-save-block" style="display:none;">
-    <button class="key-btn" style="width:100%;" onclick="bioSave()">🔐 Salva chiavi con Face ID / Touch ID</button>
-    <div class="key-st" id="bio-save-st">Le chiavi vengono cifrate sul dispositivo</div>
+  <!-- BIOMETRIA — SALVA (sempre visibile) -->
+  <div class="key-block" id="bio-save-block">
+    <button class="key-btn" style="width:100%;border-color:var(--gold-dim);color:var(--gold-dim);" onclick="bioSave()">🔑 Usa Passkey — salva chiavi con Face ID / Touch ID</button>
+    <div class="key-st" id="bio-save-st">Le chiavi vengono cifrate e salvate sul dispositivo</div>
   </div>
 
   <button class="start-btn" id="start-btn" onclick="if(navigator.geolocation){navigator.geolocation.getCurrentPosition(function(p){window._iosGps=p},function(){},{ enableHighAccuracy:true,timeout:20000,maximumAge:0 })}; startApp()">Inizia a camminare</button>
@@ -685,6 +685,7 @@ const S = {
   currentPos: null,
   totalDist: 0,
   lastFragAt: -9999,
+  lastFragTime: 0,
   fragCount: 0,
   currentText: '',
   isSpeaking: false,
@@ -1037,7 +1038,10 @@ function checkTrigger(lat,lon) {
 
 function triggerFrag(lat,lon,reason) {
   if (S.isGenerating) return;
-  S.lastFragAt=S.totalDist; S.fragCount++;
+  // Cooldown minimo 90 secondi tra frammenti (evita riattivazione per oscillazioni GPS)
+  const now = Date.now();
+  if (reason !== 'primo_fix' && now - S.lastFragTime < 90000) return;
+  S.lastFragAt=S.totalDist; S.lastFragTime=now; S.fragCount++;
   generateFrag(lat,lon,reason);
 }
 
@@ -1257,7 +1261,7 @@ async function generateFrag(lat,lon,reason) {
   });
 
   // ── CACHE CHECK ──
-  const cacheKey = `strati_${lat.toFixed(4)}_${lon.toFixed(4)}`;
+  const cacheKey = `strati_${lat.toFixed(3)}_${lon.toFixed(3)}`;
   const cached = loadCache(cacheKey);
   if (cached) {
     document.getElementById('gen-wrap').classList.remove('on');
@@ -1291,7 +1295,7 @@ Ricevi dati reali da Wikipedia, Wikidata e OpenStreetMap e li trasformi in narra
 
 FORMATO — rispondi SOLO con JSON valido, nient'altro:
 {
-  "place": "Nome specifico del luogo, via o quartiere",
+  "place": "Nome specifico del luogo, via o quartiere dove si trova l'utente (NON il nome di un'attrazione vicina)",
   "epoch": "Epoca principale (es: 'Medioevo', 'XIX secolo', 'anni Settanta', 'oggi')",
   "tone": "uno tra: drammatico | documentaristico | poetico | distaccato | solenne",
   "text": "Testo narrativo completo"
@@ -1306,11 +1310,14 @@ REGOLE TONO:
 
 REGOLE TESTO:
 - Seconda persona: "Stai camminando su...", "Sotto i tuoi piedi..."
+- IMPORTANTE: L'utente si trova ESATTAMENTE alle coordinate fornite. Non dire che è "vicino a" o "nei pressi di" un luogo se quel luogo è distante — usa la distanza reale in metri e dì "a X metri da qui si trova..."
+- I dati Wikipedia/OSM sono fonti storiche per la zona, ma il punto di vista narrativo è SEMPRE dalla posizione esatta dell'utente
+- Se un'attrazione è a 200m, dì "a duecento metri da dove ti trovi..." — non fingere che l'utente ci sia sopra
 - Fatti precisi, date, nomi reali — MAI inventare
 - Se dati scarsi: dì onestamente cosa non si sa
 - 120-200 parole
 - Vai a capo spesso
-- Inizia sempre dal luogo fisico, poi espandi nel tempo`;
+- Inizia sempre dal luogo fisico dove si trova l'utente, poi espandi nel tempo e nello spazio`;
 
   const h=new Date().getHours();
   const tod=h<6?'notte':h<12?'mattina':h<18?'pomeriggio':'sera';
@@ -1354,12 +1361,15 @@ REGOLE TESTO:
     osmStr='\nDATA OPENSTREETMAP:\n'+histData.osmData.map(o=>`— ${o.name} (${o.type})${o.startDate?' · '+o.startDate:''}${o.description?' · '+o.description:''}`).join('\n');
   }
 
-  const userPrompt=`POSIZIONE: ${lat.toFixed(5)}°N, ${lon.toFixed(5)}°E
+  const currentAddr = document.getElementById('frag-address').textContent || document.getElementById('addr-strip').textContent || '';
+  const userPrompt=`POSIZIONE ESATTA UTENTE: ${lat.toFixed(5)}°N, ${lon.toFixed(5)}°E${currentAddr ? '\nIndirizzo: ' + currentAddr : ''}
 Distanza percorsa: ${Math.round(S.totalDist)}m · Ora: ${timeStr()} (${tod}) · Luogo n.${S.fragCount}
+
+NOTA: i dati sotto sono di luoghi nella zona con la loro distanza in metri dall'utente. Usali come contesto storico ma racconta sempre dalla posizione esatta dell'utente.
 ${wikiStr}
 ${osmStr}
 
-Genera la narrazione.`;
+Genera la narrazione ricordando che l'utente è alle coordinate indicate, non necessariamente dentro o sopra i luoghi citati.`;
 
   try {
     const parsed = await callOpenAI(systemPrompt, userPrompt);
@@ -1474,6 +1484,19 @@ function startApp() {
   if (!S.openaiKey) {
     alert('Inserisci e verifica la Groq API Key prima di iniziare.'); return;
   }
+  // iOS audio unlock: crea e riproduce un audio silenzioso per sbloccare l'AudioContext
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = ctx.createBuffer(1,1,22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf; src.connect(ctx.destination); src.start(0);
+    S._audioCtxUnlocked = true;
+  } catch(e) {}
+  // Unlock speechSynthesis su iOS
+  if (window.speechSynthesis) {
+    const u = new SpeechSynthesisUtterance('');
+    window.speechSynthesis.speak(u);
+  }
   S.startTime = new Date();
   startTracking();
   document.getElementById('splash').classList.add('hidden');
@@ -1500,10 +1523,7 @@ async function bioInit() {
   if (saved) {
     document.getElementById('bio-load-block').style.display = 'block';
   }
-  // Mostra il tasto salva solo se WebAuthn è disponibile
-  if (window.PublicKeyCredential) {
-    document.getElementById('bio-save-block').style.display = 'block';
-  }
+  // bio-save-block è sempre visibile (già nel HTML)
 }
 
 // Chiave AES derivata da un segreto fisso + fingerprint del dispositivo
