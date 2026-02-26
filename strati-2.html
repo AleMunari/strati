@@ -1,0 +1,1984 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>STRATI</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #0c0b09;
+    --paper: #13120e;
+    --gold: #c9a84c;
+    --gold-dim: #9a7d3a;
+    --text: #e0dbd0;
+    --muted: #8a8278;
+    --red: #c03030;
+    --fs-base: 1rem;        /* 16px */
+    --fs-sm: 0.875rem;      /* 14px */
+    --fs-xs: 0.75rem;       /* 12px */
+    --fs-lg: 1.125rem;      /* 18px */
+    --fs-xl: 1.375rem;      /* 22px */
+    --lh: 1.65;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 16px;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content:'';
+    position:fixed; inset:0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+    pointer-events:none; z-index:1000; opacity:0.5;
+  }
+
+  body::after {
+    content:'';
+    position:fixed; inset:0;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.35) 100%);
+    pointer-events:none; z-index:999;
+  }
+
+  /* ══ SPLASH ══ */
+  #splash {
+    position:fixed; inset:0; background:#000;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+    z-index:2000; transition:opacity 2s ease; padding:2rem 2rem 4rem;
+    overflow-y: auto;
+  }
+  #splash.hidden { opacity:0; pointer-events:none; }
+
+  .s-eyebrow {
+    font-size:0.85rem; letter-spacing:0.4em;
+    color:var(--gold-dim); text-transform:uppercase; margin-bottom:1rem;
+  }
+  .s-title {
+    font-family:'Playfair Display',serif;
+    font-size:clamp(4rem,18vw,9rem); font-weight:400;
+    letter-spacing:0.15em; color:#fff; line-height:1;
+    text-shadow:0 0 80px rgba(201,168,76,0.3);
+    animation:title-breathe 4s ease-in-out infinite;
+  }
+  @keyframes title-breathe {
+    0%,100%{text-shadow:0 0 80px rgba(201,168,76,0.3);}
+    50%{text-shadow:0 0 120px rgba(201,168,76,0.5),0 0 200px rgba(201,168,76,0.15);}
+  }
+  .s-sub {
+    font-size:0.9rem; letter-spacing:0.2em;
+    color:var(--muted); margin-top:0.8rem; text-transform:uppercase;
+  }
+  .s-divider { width:60px; height:1px; background:var(--gold-dim); margin:2rem auto; }
+  .s-desc {
+    font-size:1rem; color:var(--muted); line-height:1.9;
+    text-align:center; max-width:320px; letter-spacing:0.03em;
+  }
+  .s-desc em { color:var(--text); font-style:normal; }
+
+  .key-block { margin-top:1.8rem; width:100%; max-width:340px; }
+  .key-block + .key-block { margin-top:1.4rem; }
+
+  .key-lbl {
+    font-size:0.82rem; letter-spacing:0.18em; color:var(--muted);
+    text-transform:uppercase; display:block; margin-bottom:0.6rem;
+  }
+  .key-row { display:flex; gap:0.5rem; }
+  .key-inp {
+    flex:1; background:#0a0a08; border:1px solid #2a2820;
+    color:var(--text); font-family:'IBM Plex Mono',monospace;
+    font-size:16px; /* CRITICO: evita zoom iOS */
+    padding:0.75rem 0.9rem; outline:none; transition:border-color 0.3s;
+    min-height:48px;
+  }
+  .key-inp:focus { border-color:var(--gold-dim); }
+  .key-btn {
+    padding:0.75rem 1.1rem; background:transparent;
+    border:1px solid var(--gold-dim); color:var(--text);
+    font-family:'IBM Plex Mono',monospace; font-size:0.88rem;
+    letter-spacing:0.1em; cursor:pointer; transition:all 0.3s; white-space:nowrap;
+    min-height:48px;
+  }
+  .key-btn:hover { background:var(--gold-dim); }
+  .key-st {
+    margin-top:0.5rem; font-size:0.82rem; color:var(--muted);
+    letter-spacing:0.08em; min-height:1.1rem;
+  }
+  .key-st.ok { color:#5a8a5a; }
+  .key-st.err { color:var(--red); }
+  .key-st.req { color:var(--gold-dim); }
+
+  .start-btn {
+    margin-top:2.5rem; padding:1.1rem 3.5rem; background:transparent;
+    border:1px solid var(--gold-dim); color:var(--gold);
+    font-family:'IBM Plex Mono',monospace; font-size:0.9rem;
+    letter-spacing:0.35em; text-transform:uppercase; cursor:pointer;
+    transition:all 0.4s; position:relative; overflow:hidden;
+    min-height:54px; align-self:center; flex-shrink:0;
+  }
+  .start-btn::before {
+    content:''; position:absolute; inset:0; background:var(--gold-dim);
+    transform:scaleX(0); transform-origin:left; transition:transform 0.4s; z-index:-1;
+  }
+  .start-btn:hover::before { transform:scaleX(1); }
+  .start-btn:hover { color:#fff; border-color:transparent; }
+
+  .s-warning {
+    margin-top:1.5rem; font-size:0.82rem; color:var(--muted);
+    letter-spacing:0.08em; text-align:center; line-height:2;
+    padding-bottom: 5rem;
+  }
+
+  /* ══ APP ══ */
+  #app { display:none; flex-direction:column; min-height:100dvh; }
+  #app.visible { display:flex; }
+
+  header {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:1rem 1.5rem; border-bottom:1px solid #1e1c18;
+    position:sticky; top:0;
+    background:rgba(12,11,9,0.96); backdrop-filter:blur(12px); z-index:100;
+  }
+  .app-title {
+    font-family:'Playfair Display',serif; font-size:1.5rem;
+    letter-spacing:0.2em; color:var(--gold); font-weight:400;
+  }
+  .hdr-right { display:flex; align-items:center; gap:0.8rem; font-size:var(--fs-sm); letter-spacing:0.12em; color:var(--muted); }
+
+  #mute-btn {
+    background: transparent; border: 1px solid #2a2820; color: var(--muted);
+    font-size: 1rem; padding: 0.3rem 0.6rem; cursor: pointer;
+    transition: all 0.3s; min-height: 36px; min-width: 44px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #mute-btn:hover { border-color: var(--gold-dim); }
+  #mute-btn.muted { color: #4a4440; border-color: #1e1c18; }
+
+  .gps-dot { width:9px; height:9px; border-radius:50%; background:#2a2820; display:inline-block; margin-right:0.4rem; flex-shrink:0; }
+  .gps-dot.lock {
+    background:var(--gold); box-shadow:0 0 8px rgba(201,168,76,0.7);
+    animation:gps-pulse 2s ease-in-out infinite;
+  }
+  @keyframes gps-pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
+
+  .coord-strip {
+    padding:0.6rem 1.5rem; border-bottom:1px solid #131210;
+    display:flex; align-items:center;
+    font-size:var(--fs-sm); letter-spacing:0.06em; color:var(--muted);
+    font-style: italic;
+  }
+
+  .stats-row {
+    display:flex; justify-content:space-around;
+    padding:1.2rem 1rem; border-bottom:1px solid #131210;
+  }
+  .stat { text-align:center; padding:0 0.5rem; }
+  .stat-val {
+    font-family:'Playfair Display',serif; font-size:1.75rem;
+    color:var(--gold); display:block; line-height:1.1; font-style:italic;
+  }
+  .stat-lbl { font-size:0.72rem; letter-spacing:0.18em; color:var(--muted); text-transform:uppercase; margin-top:0.2rem; display:block; }
+
+  .epoch-bar {
+    padding:0.9rem 1.5rem; border-bottom:1px solid #131210;
+    display:flex; align-items:center; gap:1rem;
+  }
+  .epoch-label { font-size:0.78rem; letter-spacing:0.22em; color:var(--muted); text-transform:uppercase; white-space:nowrap; }
+  .epoch-value { font-family:'Playfair Display',serif; font-size:1.2rem; color:var(--gold); font-style:italic; }
+  .epoch-bar::after { content:''; flex:1; height:1px; background:#1a1810; }
+
+  .search-status {
+    padding:0.7rem 1.5rem; border-bottom:1px solid #0f0e0c;
+    font-size:var(--fs-sm); color:var(--muted); letter-spacing:0.08em;
+    display:flex; align-items:center; gap:0.6rem; min-height:2.8rem;
+  }
+  .search-dot { width:6px; height:6px; border-radius:50%; background:var(--gold); opacity:0; flex-shrink:0; }
+  .search-dot.on { animation:sdot 0.8s ease-in-out infinite; }
+  @keyframes sdot{0%,100%{opacity:0.2;}50%{opacity:1;}}
+
+  .progress-wrap { padding:0.7rem 1.5rem; border-bottom:1px solid #0f0e0c; }
+  .progress-top {
+    display:flex; justify-content:space-between;
+    font-size:0.78rem; letter-spacing:0.12em; color:var(--muted); text-transform:uppercase; margin-bottom:0.5rem;
+  }
+  .progress-bar { height:2px; background:#1a1810; border-radius:2px; }
+  .progress-fill {
+    height:100%; background:linear-gradient(90deg,var(--gold-dim),var(--gold));
+    width:0%; transition:width 1s ease; border-radius:2px;
+  }
+
+  .story-wrap { flex:1; padding:1.5rem; }
+
+  .frag-header { display:flex; align-items:flex-start; gap:1rem; margin-bottom:1.4rem; }
+  .frag-num-box {
+    font-family:'Playfair Display',serif; font-size:3rem;
+    color:var(--gold-dim); font-style:italic; line-height:1; flex-shrink:0;
+  }
+  .frag-meta-col { flex:1; min-width:0; }
+  .frag-place { font-family:'Playfair Display',serif; font-size:1.25rem; color:var(--gold); font-style:italic; margin-bottom:0.3rem; line-height:1.3; }
+  .frag-coords-lbl { font-size:0.78rem; letter-spacing:0.1em; color:var(--muted); }
+
+  .gen-wrap { display:none; align-items:center; gap:0.7rem; margin-bottom:1.2rem; font-size:var(--fs-sm); letter-spacing:0.12em; color:var(--muted); }
+  .gen-wrap.on { display:flex; }
+  .gen-d { width:6px; height:6px; border-radius:50%; background:var(--gold); animation:gdot 1s ease-in-out infinite; flex-shrink:0; }
+  .gen-d:nth-child(2){animation-delay:0.25s;} .gen-d:nth-child(3){animation-delay:0.5s;}
+  @keyframes gdot{0%,100%{opacity:0.15;}50%{opacity:1;}}
+
+  .story-text { font-size:var(--fs-lg); line-height:var(--lh); color:var(--text); min-height:80px; }
+  .story-text.no-data { color: var(--muted); font-size: var(--fs-base); }
+
+  .cursor-blink {
+    display:inline-block; width:9px; height:1em;
+    background:var(--text); vertical-align:text-bottom;
+    animation:blink 1s step-end infinite; margin-left:2px;
+  }
+  @keyframes blink{0%,100%{opacity:1;}50%{opacity:0;}}
+
+  .sources-wrap { margin-top:1.4rem; padding-top:0.9rem; border-top:1px solid #1a1810; display:none; }
+  .sources-wrap.on { display:block; }
+  .sources-lbl { font-size:0.78rem; letter-spacing:0.25em; color:var(--muted); text-transform:uppercase; margin-bottom:0.7rem; }
+  .source-tag {
+    display:inline-flex; align-items:center; font-size:var(--fs-sm); letter-spacing:0.05em;
+    color:var(--gold-dim); border:1px solid #2a2418;
+    padding:0.4rem 0.8rem; margin:0.3rem 0.3rem 0.3rem 0;
+    cursor:pointer; transition:color 0.2s; text-decoration:none;
+    min-height:40px;
+  }
+  .source-tag:hover { color:var(--gold); }
+
+  .audio-btn {
+    margin-top:2rem; width:100%; padding:1.2rem; background:transparent;
+    border:1px solid #1e1c18; color:var(--muted);
+    font-family:'IBM Plex Mono',monospace; font-size:var(--fs-base);
+    letter-spacing:0.15em; text-transform:uppercase; cursor:pointer; transition:all 0.3s;
+    display:flex; align-items:center; justify-content:center; gap:0.7rem;
+    min-height:56px;
+  }
+  .audio-btn:hover { border-color:var(--gold-dim); color:var(--text); }
+  .audio-btn.speaking { border-color:var(--gold); color:var(--gold); animation:ab-pulse 2s ease-in-out infinite; }
+  .audio-btn.loading { color:#2a2820; border-color:#1e1c18; }
+  @keyframes ab-pulse{0%,100%{box-shadow:0 0 0 0 rgba(201,168,76,0);}50%{box-shadow:0 0 0 8px rgba(201,168,76,0.06);}}
+
+  .history-wrap { padding:0 1.5rem 3rem; border-top:1px solid #0f0e0c; }
+  .hist-lbl { font-size:0.78rem; letter-spacing:0.3em; color:var(--muted); text-transform:uppercase; padding:1.2rem 0 1rem; }
+  .hist-item {
+    padding:1rem 0 1rem 1.2rem; border-left:2px solid #2a2820;
+    margin-bottom:1rem; cursor:pointer; transition:border-color 0.3s;
+    min-height:44px;
+  }
+  .hist-item:hover { border-left-color:var(--gold-dim); }
+  .hist-place { font-family:'Playfair Display',serif; font-size:1rem; color:var(--gold-dim); font-style:italic; margin-bottom:0.3rem; }
+  .hist-epoch { font-size:0.72rem; letter-spacing:0.15em; color:var(--muted); margin-bottom:0.4rem; }
+  .hist-preview { font-size:var(--fs-sm); color:#7a7468; line-height:1.6; }
+
+  #flash { position:fixed; inset:0; background:rgba(201,168,76,0.03); pointer-events:none; z-index:998; opacity:0; transition:opacity 0.08s; }
+  #flash.on { opacity:1; }
+
+  
+
+  .nline { position:fixed; left:0; right:0; height:1px; background:rgba(201,168,76,0.15); pointer-events:none; z-index:997; opacity:0; animation:nline 14s linear infinite; }
+  @keyframes nline{0%{top:-1px;opacity:0;}2%{opacity:0.15;}98%{opacity:0.04;}100%{top:100vh;opacity:0;}}
+
+  .frag-address { font-size:0.78rem; letter-spacing:0.06em; color:var(--gold-dim); margin-bottom:0.25rem; min-height:1rem; }
+
+  .place-photo-wrap { margin-bottom:1.2rem; display:none; }
+  .place-photo-wrap.on { display:block; }
+  .place-photo-container {
+    width: 100%; aspect-ratio: 16/9; overflow: hidden;
+    border: 1px solid #2a2418; border-bottom: none;
+  }
+  .place-photo {
+    width: 100%; height: 100%;
+    object-fit: cover; object-position: center center;
+    filter: brightness(0.88) saturate(0.75);
+    display: block;
+  }
+  .place-photo-caption {
+    font-size:0.68rem; letter-spacing:0.08em; color:var(--muted);
+    padding:0.35rem 0.5rem; border:1px solid #2a2418; border-top: 1px solid #1a1612;
+    background:#0e0d0b; line-height:1.5;
+  }
+
+  /* ══ APPROFONDISCI ══ */
+  .approfondisci-btn {
+    margin-top: 1.4rem; width: 100%; padding: 1rem;
+    background: transparent; border: 1px solid #2a2418;
+    color: var(--gold-dim); font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.82rem; letter-spacing: 0.25em; text-transform: uppercase;
+    cursor: pointer; transition: all 0.35s;
+    display: flex; align-items: center; justify-content: center; gap: 0.6rem;
+    min-height: 52px;
+  }
+  .approfondisci-btn:hover { border-color: var(--gold-dim); color: var(--gold); }
+  .approfondisci-btn.loading { color: #3a3020; border-color: #1e1c18; pointer-events: none; }
+  .approfondisci-btn.done { display: none; }
+
+  .approfondimento-wrap {
+    display: none; margin-top: 0;
+    border-top: 1px solid #1e1c18;
+  }
+  .approfondimento-wrap.on { display: block; }
+
+  .approfondimento-section {
+    padding: 1.2rem 0; border-bottom: 1px solid #131210;
+  }
+  .approfondimento-section:last-child { border-bottom: none; }
+  .approfondimento-lbl {
+    font-size: 0.68rem; letter-spacing: 0.3em; color: var(--gold-dim);
+    text-transform: uppercase; margin-bottom: 0.8rem; display: flex;
+    align-items: center; gap: 0.5rem; justify-content: space-between;
+  }
+  .approfondimento-lbl::before {
+    content: ''; display: inline-block; width: 16px; height: 1px;
+    background: var(--gold-dim); flex-shrink: 0;
+  }
+  .appr-play-btn {
+    background: transparent; border: 1px solid #2a2418; color: var(--gold-dim);
+    font-size: 0.75rem; padding: 0.25rem 0.6rem; cursor: pointer;
+    transition: all 0.25s; min-height: 28px; min-width: 36px;
+    font-family: 'IBM Plex Mono', monospace; margin-left: auto;
+    flex-shrink: 0;
+  }
+  .appr-play-btn:hover { border-color: var(--gold); color: var(--gold); }
+  .appr-play-btn.speaking { border-color: var(--gold); color: var(--gold); animation: ab-pulse 2s ease-in-out infinite; }
+  .appr-play-btn.loading { color: #3a3020; border-color: #1e1c18; pointer-events: none; }
+  .approfondimento-text {
+    font-size: var(--fs-base); line-height: var(--lh); color: var(--text);
+  }
+
+  /* ══ MAPPA ══ */
+  .map-section {
+    border-top: 1px solid #131210;
+    padding: 0.7rem 1.5rem;
+  }
+  .map-toggle-btn {
+    width: 100%; padding: 0.9rem; background: transparent;
+    border: 1px solid #1e1c18; color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace; font-size: var(--fs-sm);
+    letter-spacing: 0.18em; text-transform: uppercase; cursor: pointer;
+    transition: all 0.3s; display: flex; align-items: center; justify-content: center; gap: 0.6rem;
+    min-height: 52px;
+  }
+  .map-toggle-btn:hover { border-color: var(--gold-dim); color: var(--text); }
+  .map-toggle-btn.active { border-color: var(--gold-dim); color: var(--gold); }
+  #map-container {
+    display: none; height: 220px; margin-top: 0.7rem;
+    border: 1px solid #1e1c18; position: relative; overflow: hidden;
+  }
+  #map-container.visible { display: block; }
+  #map { width: 100%; height: 100%; }
+  .leaflet-container { background: #0c0b09 !important; }
+  .leaflet-tile { filter: invert(1) hue-rotate(180deg) saturate(0.4) brightness(0.6); }
+
+  /* ══ AUDIO APPROFONDIMENTO BAR ══ */
+  .appr-audio-bar {
+    display: none; position: sticky; bottom: 0;
+    background: rgba(12,11,9,0.97); backdrop-filter: blur(12px);
+    border-top: 1px solid #2a2418;
+    padding: 0.8rem 1.5rem;
+    flex-direction: row; align-items: center; gap: 0.7rem;
+    z-index: 200;
+  }
+  .appr-audio-bar.on { display: flex; }
+  .appr-audio-bar-lbl {
+    flex: 1; font-size: 0.78rem; letter-spacing: 0.1em;
+    color: var(--gold); animation: ab-pulse 2s ease-in-out infinite;
+  }
+  .appr-ctrl-btn {
+    background: transparent; border: 1px solid #2a2418; color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.88rem;
+    padding: 0.5rem 0.9rem; cursor: pointer; transition: all 0.3s;
+    min-height: 40px; min-width: 44px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .appr-ctrl-btn:hover { border-color: var(--gold-dim); color: var(--text); }
+
+  /* ══ CACHE BADGE ══ */
+  .cache-badge {
+    font-size: 0.62rem; letter-spacing: 0.2em; color: #5a8a5a;
+    padding: 0.15rem 0.4rem; border: 1px solid #2a4a2a;
+    display: inline-block; margin-left: 0.5rem; vertical-align: middle;
+    text-transform: uppercase;
+  }
+
+  /* ══ END SESSION ══ */
+  #end-overlay {
+    display: none; position: fixed; inset: 0; background: var(--bg);
+    z-index: 5000; overflow-y: auto; padding: 2rem 1.5rem 4rem;
+  }
+  #end-overlay.visible { display: block; }
+  .end-header {
+    text-align: center; padding: 2rem 0 1.5rem;
+    border-bottom: 1px solid #1e1c18; margin-bottom: 2rem;
+  }
+  .end-eyebrow { font-size: 0.72rem; letter-spacing: 0.5em; color: var(--muted); text-transform: uppercase; margin-bottom: 0.8rem; }
+  .end-title {
+    font-family: 'Playfair Display', serif; font-size: clamp(2.5rem, 12vw, 5rem);
+    color: var(--gold); font-weight: 400; font-style: italic; letter-spacing: 0.1em;
+    text-shadow: 0 0 60px rgba(201,168,76,0.3);
+  }
+  .end-sub { font-size: 0.8rem; letter-spacing: 0.2em; color: var(--muted); margin-top: 0.6rem; text-transform: uppercase; }
+  .end-stats {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+    background: #1a1810; border: 1px solid #1a1810; margin-bottom: 2rem;
+  }
+  .end-stat {
+    background: var(--paper); padding: 1.2rem; text-align: center;
+  }
+  .end-stat-val {
+    font-family: 'Playfair Display', serif; font-size: 1.8rem;
+    color: var(--gold); display: block; font-style: italic; line-height: 1;
+  }
+  .end-stat-lbl { font-size: 0.68rem; letter-spacing: 0.25em; color: var(--muted); text-transform: uppercase; margin-top: 0.3rem; display: block; }
+  .end-epochs {
+    margin-bottom: 2rem; padding: 1rem; border: 1px solid #1e1c18;
+  }
+  .end-epochs-lbl { font-size: 0.7rem; letter-spacing: 0.3em; color: var(--muted); text-transform: uppercase; margin-bottom: 0.8rem; }
+  .epoch-pill {
+    display: inline-block; font-size: 0.72rem; letter-spacing: 0.1em;
+    color: var(--gold-dim); border: 1px solid #2a2418;
+    padding: 0.3rem 0.6rem; margin: 0.2rem;
+  }
+  .end-log { margin-bottom: 2rem; }
+  .end-log-lbl { font-size: 0.7rem; letter-spacing: 0.35em; color: var(--muted); text-transform: uppercase; margin-bottom: 1rem; }
+  .end-log-item {
+    padding: 0.8rem 0 0.8rem 1rem; border-left: 1px solid #1e1c18;
+    margin-bottom: 0.6rem;
+  }
+  .end-log-place { font-family: 'Playfair Display', serif; font-size: 1rem; color: var(--gold); font-style: italic; }
+  .end-log-epoch { font-size: 0.7rem; letter-spacing: 0.2em; color: var(--muted); margin: 0.2rem 0; }
+  .end-log-text { font-size: 0.82rem; color: var(--muted); line-height: 1.7; margin-top: 0.4rem; }
+  .end-actions { display: flex; flex-direction: column; gap: 0.8rem; }
+  .end-btn {
+    width: 100%; padding: 0.9rem; background: transparent;
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.82rem;
+    letter-spacing: 0.25em; text-transform: uppercase; cursor: pointer; transition: all 0.3s;
+  }
+  .end-btn-primary { border: 1px solid var(--gold-dim); color: var(--gold); }
+  .end-btn-primary:hover { background: var(--gold-dim); color: #fff; }
+  .end-btn-secondary { border: 1px solid #1e1c18; color: var(--muted); }
+  .end-btn-secondary:hover { border-color: #2a2820; color: var(--text); }
+  .end-map { height: 180px; border: 1px solid #1e1c18; margin-bottom: 2rem; }
+  #end-map { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+
+<div class="nline"></div>
+
+<!-- SPLASH -->
+<div id="splash">
+  <!-- PULSANTE IN CIMA -->
+  <div style="width:100%;max-width:340px;display:flex;flex-direction:column;align-items:center;gap:0.5rem;margin-bottom:1.5rem;">
+    <button class="start-btn" id="start-btn" style="margin-top:0;width:100%;letter-spacing:0.2em;" onclick="unifiedStart()">
+      <span id="start-btn-label">Inizia a camminare</span>
+    </button>
+    <div class="key-st" id="unified-st" style="text-align:center;min-height:1.1rem;"></div>
+    <div id="manual-start-link" style="display:none;gap:0;">
+      <span style="font-size:0.75rem;color:var(--muted);letter-spacing:0.12em;cursor:pointer;text-decoration:underline;text-decoration-color:#3a3830;" onclick="startAppDirect()">Entra senza salvare</span>
+      <span style="font-size:0.75rem;color:#3a3830;letter-spacing:0.12em;"> · </span>
+      <span style="font-size:0.75rem;color:var(--muted);letter-spacing:0.12em;cursor:pointer;" onclick="bioClearInline()">✕ dimentica</span>
+    </div>
+  </div>
+
+  <div class="s-eyebrow">Una camminata nella memoria</div>
+  <div class="s-title">STRATI</div>
+  <div class="s-sub">Storia viva sotto i tuoi piedi</div>
+  <div class="s-divider"></div>
+  <div class="s-desc">
+    Cammini. Il GPS ti localizza.<br>
+    L'AI cerca cosa è successo <em>esattamente lì</em>.<br>
+    Dall'antichità alla cronaca di ieri.
+  </div>
+
+  <!-- chiave API integrata — placeholder per compatibilità bio -->
+  <div style="display:none"><input id="gem-key"><div id="gem-st"></div></div>
+
+  <div class="s-warning">
+    Usa le cuffie · Cammina in luoghi sicuri<br>
+    Dati storici da Wikipedia e OpenStreetMap
+  </div>
+  <div id="gps-denied-msg" style="display:none;margin-top:1.2rem;width:100%;max-width:340px;background:#1a0e0e;border:1px solid #5a2020;padding:1rem 1.2rem;">
+    <div style="font-size:0.78rem;color:#c07070;letter-spacing:0.08em;line-height:1.9;">
+      ⚠ GPS bloccato su questo browser.<br>
+      <strong style="color:#e08080;">Impostazioni → Privacy e sicurezza<br>→ Localizzazione → Safari → Consenti</strong><br>
+      <span style="color:var(--muted);font-size:0.72rem;">Poi ricarica la pagina.</span>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <header>
+    <div class="app-title">STRATI</div>
+    <div class="hdr-right">
+      <span><span class="gps-dot" id="gps-dot"></span><span id="gps-txt">attesa</span></span>
+      <button id="mute-btn" onclick="toggleMute()" title="Silenzia narrazione">🔊</button>
+    </div>
+  </header>
+
+  <div class="coord-strip">
+    <span id="addr-strip">—</span>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat"><span class="stat-val" id="s-dist">—</span><span class="stat-lbl">metri</span></div>
+    <div class="stat"><span class="stat-val" id="s-frags">0</span><span class="stat-lbl">luoghi</span></div>
+    <div class="stat"><span class="stat-val" id="s-layers">—</span><span class="stat-lbl">epoche</span></div>
+    <div class="stat"><span class="stat-val" id="s-time">—</span><span class="stat-lbl">ora</span></div>
+  </div>
+
+  <div class="epoch-bar">
+    <span class="epoch-label">Epoca</span>
+    <span class="epoch-value" id="epoch-val">in ricerca...</span>
+  </div>
+
+  <div class="search-status" id="search-status">
+    <div class="search-dot" id="search-dot"></div>
+    <span id="search-txt">GPS in calibrazione — comincia a camminare</span>
+  </div>
+
+  <div class="progress-wrap">
+    <div class="progress-top">
+      <span>Prossimo luogo</span>
+      <span id="prog-next">—</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="prog-fill"></div></div>
+  </div>
+
+  <div class="story-wrap">
+    <div class="frag-header">
+      <div class="frag-num-box" id="frag-n">—</div>
+      <div class="frag-meta-col">
+        <div class="frag-place" id="frag-place">In attesa di segnale...</div>
+        <div class="frag-address" id="frag-address"></div>
+        <div class="frag-coords-lbl" id="frag-coords"></div>
+      </div>
+    </div>
+
+    <div class="gen-wrap" id="gen-wrap">
+      <div class="gen-d"></div><div class="gen-d"></div><div class="gen-d"></div>
+      <span>ricerca e narrazione in corso</span>
+    </div>
+
+    <div class="place-photo-wrap" id="place-photo-wrap"></div>
+
+    <div class="story-text" id="story-text">
+      <span style="color:var(--muted)">Quando il GPS sarà pronto, la storia del luogo emergerà dalla terra.</span>
+    </div>
+
+    <div class="sources-wrap" id="sources-wrap">
+      <div class="sources-lbl">Fonti</div>
+      <div id="sources-list"></div>
+    </div>
+
+    <button class="audio-btn" id="audio-btn" onclick="speakCurrent()">
+      <span id="audio-icon">▶</span>
+      <span id="audio-lbl">Ascolta narrazione</span>
+    </button>
+
+    <button class="approfondisci-btn" id="approfondisci-btn" onclick="approfondisci()" style="display:none;">
+      <span id="approfondisci-icon">✦</span>
+      <span id="approfondisci-lbl">Approfondisci</span>
+    </button>
+
+    <div class="approfondimento-wrap" id="approfondimento-wrap">
+      <div class="approfondimento-section" id="app-cronologia" style="display:none;">
+        <div class="approfondimento-lbl">
+          Cronologia
+          <button class="appr-play-btn" id="play-cronologia" onclick="speakSection('cronologia')" title="Ascolta">▶</button>
+        </div>
+        <div class="approfondimento-text" id="app-cronologia-text"></div>
+      </div>
+      <div class="approfondimento-section" id="app-personaggi" style="display:none;">
+        <div class="approfondimento-lbl">
+          Personaggi
+          <button class="appr-play-btn" id="play-personaggi" onclick="speakSection('personaggi')" title="Ascolta">▶</button>
+        </div>
+        <div class="approfondimento-text" id="app-personaggi-text"></div>
+      </div>
+      <div class="approfondimento-section" id="app-connessioni" style="display:none;">
+        <div class="approfondimento-lbl">
+          Luoghi connessi
+          <button class="appr-play-btn" id="play-connessioni" onclick="speakSection('connessioni')" title="Ascolta">▶</button>
+        </div>
+        <div class="approfondimento-text" id="app-connessioni-text"></div>
+      </div>
+      <div class="approfondimento-section" id="app-aneddoti" style="display:none;">
+        <div class="approfondimento-lbl">
+          Aneddoti
+          <button class="appr-play-btn" id="play-aneddoti" onclick="speakSection('aneddoti')" title="Ascolta">▶</button>
+        </div>
+        <div class="approfondimento-text" id="app-aneddoti-text"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="history-wrap">
+    <div class="hist-lbl">Luoghi visitati</div>
+    <div id="hist-list"></div>
+  </div>
+
+  <!-- MAPPA -->
+  <div class="map-section">
+    <button class="map-toggle-btn" id="map-toggle-btn" onclick="toggleMap()">
+      <span id="map-icon">◎</span><span id="map-btn-txt"> Mostra percorso su mappa</span>
+    </button>
+    <div id="map-container">
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <!-- FINE SESSIONE -->
+  <div style="padding:1rem 1.5rem 2rem;">
+    <button class="end-btn end-btn-secondary" style="width:100%;border:1px solid #1e1c18;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:0.78rem;letter-spacing:0.2em;text-transform:uppercase;cursor:pointer;padding:0.8rem;background:transparent;transition:all 0.3s;" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='#1e1c18';this.style.color='var(--muted)'" onclick="endSession()">
+      ✦ Fine camminata — Vedi riepilogo
+    </button>
+  </div>
+</div>
+
+<!-- FINE SESSIONE -->
+<div id="end-overlay">
+  <div class="end-header">
+    <div class="end-eyebrow">Camminata completata</div>
+    <div class="end-title">Fine</div>
+    <div class="end-sub" id="end-date">—</div>
+  </div>
+
+  <div class="end-stats">
+    <div class="end-stat">
+      <span class="end-stat-val" id="end-dist">—</span>
+      <span class="end-stat-lbl">metri percorsi</span>
+    </div>
+    <div class="end-stat">
+      <span class="end-stat-val" id="end-places">—</span>
+      <span class="end-stat-lbl">luoghi narrati</span>
+    </div>
+    <div class="end-stat">
+      <span class="end-stat-val" id="end-epochs-n">—</span>
+      <span class="end-stat-lbl">epoche toccate</span>
+    </div>
+    <div class="end-stat">
+      <span class="end-stat-val" id="end-duration">—</span>
+      <span class="end-stat-lbl">minuti di storia</span>
+    </div>
+  </div>
+
+  <div class="end-epochs" id="end-epochs-wrap">
+    <div class="end-epochs-lbl">Epoche attraversate</div>
+    <div id="end-epochs-list"></div>
+  </div>
+
+  <div class="end-map" id="end-map-wrap">
+    <div id="end-map"></div>
+  </div>
+
+  <div class="end-log">
+    <div class="end-log-lbl">Il tuo diario di viaggio</div>
+    <div id="end-log-list"></div>
+  </div>
+
+  <div class="end-actions">
+    <button class="end-btn end-btn-primary" onclick="exportDiary()">⬇ Scarica diario HTML</button>
+    <button class="end-btn end-btn-secondary" onclick="closeEndSession()">← Torna alla camminata</button>
+    <button class="end-btn end-btn-secondary" onclick="location.reload()">✦ Nuova camminata</button>
+  </div>
+</div>
+
+<div id="flash"></div>
+<audio id="strati-audio" preload="none" style="display:none"></audio>
+
+<!-- DEBUG AUDIO PANEL -->
+<div id="debug-panel" style="display:block;position:fixed;bottom:0;left:0;right:0;background:#0a0a08;border-top:2px solid #c9a84c;padding:0.6rem 1rem;z-index:9999;font-family:monospace;font-size:0.68rem;color:#c9a84c;max-height:160px;overflow-y:auto;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">
+    <b>🔊 AUDIO DEBUG</b>
+    <span style="cursor:pointer;color:#888;padding:0 0.3rem;" onclick="this.closest('#debug-panel').style.display='none'">✕</span>
+  </div>
+  <div id="debug-log" style="line-height:1.8;"></div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+// STATO
+// ══════════════════════════════════════════════
+const S = {
+  openaiKey: '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',
+  gpsReady: false,
+  lastPos: null,
+  currentPos: null,
+  anchorPos: null,
+  totalDist: 0,
+  lastFragAt: -9999,
+  lastFragTime: 0,
+  lastFragPos: null,
+  fragCount: 0,
+  currentText: '',
+  isSpeaking: false,
+  isGenerating: false,
+  currentAudio: null,
+  speedSamples: [],
+  history: [],
+  watchId: null,
+
+  epochsVisited: new Set(),
+  currentSources: [],
+  // NUOVI
+  startTime: null,
+  muted: false,
+  lastAddrPos: null,
+  currentApprofondimento: null,
+  mapVisible: false,
+  leafletMap: null,
+  leafletEndMap: null,
+  pathLine: null,
+  pathCoords: [],
+  markerLayer: null,
+};
+
+const INTERVAL = 80;
+
+// ══════════════════════════════════════════════
+// GROQ API
+// ══════════════════════════════════════════════
+async function testOpenAI() {
+  const key = document.getElementById('gem-key').value.trim();
+  const st = document.getElementById('gem-st');
+  if (!key) { st.textContent='Inserisci una chiave'; st.className='key-st err'; return; }
+  st.textContent='Verifica...'; st.className='key-st';
+  try {
+    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 10,
+        messages:[{ role:'user', content:'Rispondi solo: OK' }]
+      })
+    });
+    if (r.ok) {
+      S.openaiKey = key;
+      st.textContent='✓ Groq attivo — pronto per la narrazione';
+      st.className='key-st ok';
+    } else {
+      const e = await r.json();
+      st.textContent='✗ ' + (e.error?.message || 'Chiave non valida');
+      st.className='key-st err';
+    }
+  } catch(e) { st.textContent='✗ Errore di rete'; st.className='key-st err'; }
+}
+
+async function callOpenAI(systemPrompt, userPrompt) {
+  if (!S.openaiKey) throw new Error('Nessuna Groq key');
+
+  const body = {
+    model: 'llama-3.3-70b-versatile',
+    temperature: 0.8,
+    max_tokens: 1024,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ]
+  };
+
+  const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.openaiKey},
+    body: JSON.stringify(body)
+  });
+
+  if (!r.ok) {
+    const e = await r.json();
+    throw new Error('Groq: ' + (e.error?.message || r.status));
+  }
+
+  const data = await r.json();
+  const raw = data.choices?.[0]?.message?.content || '{}';
+  try {
+    return JSON.parse(raw);
+  } catch(e) {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    return { place:'—', epoch:'—', tone:'documentaristico', text: raw };
+  }
+}
+
+// ── DEBUG ──
+function dbg(msg, color) {
+  const el = document.getElementById('debug-log');
+  if (!el) return;
+  const t = new Date().toTimeString().slice(0,8);
+  const d = document.createElement('div');
+  d.style.color = color || '#c9a84c';
+  d.textContent = t + ' ' + msg;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+  console.log('[STRATI]', msg);
+}
+
+// ══════════════════════════════════════════════
+// AUDIO SYSTEM — Voci native iOS/macOS (speechSynthesis)
+// Priorità: Federica Premium → Federica → Alice → qualsiasi voce IT
+// ══════════════════════════════════════════════
+
+let _currentSpeakId = 0;
+let _currentSection = null;
+let _iosVoice = null; // voce italiana scelta, cachata
+
+// Trova e cacha la miglior voce italiana disponibile
+function _resolveVoice() {
+  // Non cachare — rileva ogni volta, le voci possono cambiare
+  const voices = window.speechSynthesis?.getVoices() || [];
+  const itVoices = voices.filter(v => v.lang.startsWith('it'));
+  dbg('voci italiane trovate: ' + itVoices.map(v => '"' + v.name + '"').join(', '));
+
+  // Cerca Federica in tutti i formati possibili che iOS può usare
+  const voice =
+    voices.find(v => v.name === 'Federica (Premium)') ||
+    voices.find(v => v.name === 'Federica') ||
+    voices.find(v => v.name.toLowerCase().includes('federica')) ||
+    voices.find(v => v.name === 'Alice (Premium)') ||
+    voices.find(v => v.name === 'Alice') ||
+    voices.find(v => v.lang === 'it-IT' && v.localService) ||
+    voices.find(v => v.lang === 'it-IT') ||
+    null;
+
+  if (voice) dbg('✓ voce: "' + voice.name + '"', '#5a8a5a');
+  else dbg('⚠ nessuna voce italiana trovata', '#c03030');
+  return voice;
+}
+
+function _listVoices() {
+  const voices = window.speechSynthesis?.getVoices() || [];
+  const itVoices = voices.filter(v => v.lang.startsWith('it'));
+  dbg('voci totali: ' + voices.length + ' | italiane: ' + itVoices.length);
+  itVoices.forEach(v => dbg('  🇮🇹 "' + v.name + '" [' + v.lang + '] locale=' + v.localService));
+}
+
+function stopAllAudio() {
+  _currentSpeakId++;
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  _setAllUI(false);
+  _currentSection = null;
+}
+
+function _setAllUI(on, section) {
+  const btn = document.getElementById('audio-btn');
+  if (btn) {
+    btn.classList.toggle('speaking', on && section === 'main');
+    btn.classList.remove('loading');
+    document.getElementById('audio-icon').textContent = (on && section === 'main') ? '■' : '▶';
+    document.getElementById('audio-lbl').textContent = (on && section === 'main') ? 'In riproduzione — tocca per fermare' : 'Ascolta narrazione';
+  }
+  ['cronologia','personaggi','connessioni','aneddoti'].forEach(k => {
+    const b = document.getElementById('play-' + k);
+    if (!b) return;
+    const active = on && section === k;
+    b.classList.toggle('speaking', active);
+    b.classList.remove('loading');
+    b.textContent = active ? '■' : '▶';
+  });
+  S.isSpeaking = on;
+}
+
+function _setLoading(section, on) {
+  if (section === 'main') {
+    const btn = document.getElementById('audio-btn');
+    if (btn) { btn.classList.toggle('loading', on); document.getElementById('audio-lbl').textContent = on ? 'Caricamento...' : 'Ascolta narrazione'; }
+  } else {
+    const b = document.getElementById('play-' + section);
+    if (b) b.classList.toggle('loading', on);
+  }
+}
+
+// ── Core speak via speechSynthesis ──
+function _doSpeak(text, section, speakId) {
+  const synth = window.speechSynthesis;
+  synth.cancel();
+
+  const voice = _resolveVoice();
+  const u = new SpeechSynthesisUtterance(text.replace(/\n+/g, '. ').replace(/\s+/g, ' ').trim());
+  u.lang = 'it-IT';
+  u.rate = 0.92;
+  u.pitch = 0.75;  // tono basso
+  u.volume = 0.9;
+  if (voice) u.voice = voice; // imposta Federica se trovata
+
+  dbg('speak → "' + (voice ? voice.name : 'default sistema') + '" rate=' + u.rate + ' chars=' + text.length);
+
+  let ka = null;
+  u.onstart = () => {
+    if (speakId !== _currentSpeakId) { synth.cancel(); return; }
+    _currentSection = section;
+    _setAllUI(true, section);
+    dbg('▶ in riproduzione: "' + (voice ? voice.name : 'default') + '"', '#5a8a5a');
+    ka = setInterval(() => { try { if (synth.paused) synth.resume(); } catch(e) {} }, 4000);
+  };
+  u.onend = () => {
+    if (ka) { clearInterval(ka); ka = null; }
+    if (speakId !== _currentSpeakId) return;
+    dbg('■ fine ' + section);
+    _currentSection = null;
+    _setAllUI(false);
+  };
+  u.onerror = (e) => {
+    if (ka) { clearInterval(ka); ka = null; }
+    dbg('✗ errore: ' + e.error, '#c03030');
+    _currentSection = null;
+    _setAllUI(false);
+  };
+
+  synth.speak(u);
+}
+
+// ── API pubblica ──
+function speak(text, section) {
+  if (S.muted || !text?.trim()) return;
+  // toggle: stessa sezione in play → stop
+  if (_currentSection === section && S.isSpeaking) { stopAllAudio(); return; }
+  stopAllAudio();
+  const id = _currentSpeakId;
+
+  const synth = window.speechSynthesis;
+  if (!synth) { dbg('✗ speechSynthesis non disponibile', '#c03030'); return; }
+
+  // Se voci già caricate → parla subito
+  const voices = synth.getVoices();
+  if (voices.length > 0) {
+    _doSpeak(text, section, id);
+    return;
+  }
+  // Voci non ancora caricate (primo avvio) → aspetta
+  dbg('attesa caricamento voci...');
+  _setLoading(section, true);
+  let done = false;
+  const onVC = () => {
+    if (done) return; done = true;
+    synth.onvoiceschanged = null;
+    if (id !== _currentSpeakId) return;
+    _setLoading(section, false);
+    _doSpeak(text, section, id);
+  };
+  synth.onvoiceschanged = onVC;
+  setTimeout(onVC, 1500); // fallback timeout
+}
+
+// ── Compatibilità ──
+function speakText(text) { speak(text, 'main'); }
+function stopAudio() { stopAllAudio(); }
+function setAudioUI(on) { _setAllUI(on, on ? (_currentSection || 'main') : null); }
+function startSilentLoop() { dbg('startSilentLoop → noop (voci iOS)', '#5a8a5a'); S._audioReady = true; }
+function _stopSilentLoop() {}
+function _restartSilentLoop() {}
+function _clearLoading(section) { _setLoading(section, false); }
+function speakWithSystem(text) { speak(text, 'main'); }
+
+function toggleMute() {
+  S.muted = !S.muted;
+  const btn = document.getElementById('mute-btn');
+  btn.textContent = S.muted ? '🔇' : '🔊';
+  btn.classList.toggle('muted', S.muted);
+  if (S.muted) stopAllAudio();
+}
+
+function speakCurrent() {
+  if (!S.currentText || S.muted) return;
+  speak(S.currentText, 'main');
+}
+
+function speakSection(key) {
+  const el = document.getElementById('app-' + key + '-text');
+  if (!el) return;
+  const text = el.innerText || el.textContent || '';
+  if (!text.trim()) return;
+  speak(text.trim(), key);
+}
+
+// deprecated
+function showApprAudioBar() {}
+function hideApprAudioBar() {}
+function toggleApprAudio() {}
+function stopApprAudio() { stopAllAudio(); }
+function speakApprText() {}
+function speakApprWithSystem() {}
+
+// ══════════════════════════════════════════════
+// APPROFONDISCI
+// ══════════════════════════════════════════════
+async function approfondisci() {
+  if (!S.currentText || !S.openaiKey) return;
+  const btn = document.getElementById('approfondisci-btn');
+  btn.classList.add('loading');
+  document.getElementById('approfondisci-lbl').textContent = 'Ricerca in corso...';
+  document.getElementById('approfondisci-icon').textContent = '◌';
+
+  const currentPlace = document.getElementById('frag-place').textContent.replace(/\s*cache\s*/,'').trim();
+  const currentEpoch = document.getElementById('epoch-val').textContent;
+  const pos = S.currentPos;
+
+  const systemPrompt = `Sei uno storico che approfondisce la storia di un luogo specifico.
+Rispondi SOLO con JSON valido in questo formato:
+{
+  "cronologia": "Sequenza di date e eventi chiave legati a questo luogo. Usa anni precisi quando disponibili. 80-120 parole.",
+  "personaggi": "Persone reali legate a questo luogo: chi ci ha vissuto, lavorato, chi lo ha costruito, chi vi è morto. Con date. 80-120 parole.",
+  "connessioni": "Altri luoghi fisicamente vicini (<1km) che sono connessi storicamente a questo posto. Con distanza approssimativa e perché sono collegati. 80-120 parole.",
+  "aneddoti": "Un aneddoto specifico, curioso o poco noto legato a questo luogo. Deve essere vero e verificabile. 80-120 parole."
+}
+Se un campo non ha dati sufficienti, usa null.
+Non inventare mai fatti. Solo ciò che è documentato.`;
+
+  const userPrompt = `Luogo: ${currentPlace}
+Epoca principale: ${currentEpoch}
+Coordinate: ${pos?.lat?.toFixed(5)}°N, ${pos?.lon?.toFixed(5)}°E
+Narrazione già mostrata all'utente:
+${S.currentText}
+
+Approfondisci con dati storici precisi.`;
+
+  try {
+    const data = await callOpenAI(systemPrompt, userPrompt);
+    S.currentApprofondimento = data;
+
+    document.getElementById('approfondimento-wrap').classList.add('on');
+
+    const sections = [
+      { key: 'cronologia', id: 'app-cronologia', textId: 'app-cronologia-text' },
+      { key: 'personaggi', id: 'app-personaggi', textId: 'app-personaggi-text' },
+      { key: 'connessioni', id: 'app-connessioni', textId: 'app-connessioni-text' },
+      { key: 'aneddoti', id: 'app-aneddoti', textId: 'app-aneddoti-text' },
+    ];
+
+    // Raccoglie testo completo per audio
+    let fullAppText = '';
+
+    for (const s of sections) {
+      if (data[s.key] && data[s.key] !== 'null') {
+        const wrap = document.getElementById(s.id);
+        const textEl = document.getElementById(s.textId);
+        wrap.style.display = 'block';
+        typewrite(data[s.key], textEl, 18);
+        fullAppText += data[s.key] + ' ';
+      }
+    }
+
+    btn.classList.add('done'); // nasconde il pulsante
+    // Ogni sezione ha il proprio pulsante ▶ — nessun autoplay
+
+  } catch(e) {
+    btn.classList.remove('loading');
+    document.getElementById('approfondisci-lbl').textContent = 'Approfondisci';
+    document.getElementById('approfondisci-icon').textContent = '✦';
+    console.error('Approfondisci error:', e);
+  }
+}
+
+// ══════════════════════════════════════════════
+// GPS
+// ══════════════════════════════════════════════
+function startTracking() {
+  if (!navigator.geolocation) {
+    document.getElementById('gps-txt').textContent='GPS non disponibile'; return;
+  }
+  document.getElementById('gps-txt').textContent='ricerca GPS...';
+  // iOS Safari: il dialog permesso è già stato triggerato dall'onclick del bottone.
+  // Qui avviamo solo il watchPosition continuo.
+  // Se _iosGps è già popolato (permesso già dato), usiamo subito quella posizione.
+  if (window._iosGps) {
+    onPos(window._iosGps);
+    window._iosGps = null;
+  }
+  S.watchId = navigator.geolocation.watchPosition(onPos, onErr,
+    { enableHighAccuracy:true, maximumAge:3000, timeout:20000 });
+}
+
+function onPos(pos) {
+  const { latitude:lat, longitude:lon, accuracy, speed } = pos.coords;
+  document.getElementById('gps-dot').classList.add('lock');
+  document.getElementById('gps-txt').textContent=`±${Math.round(accuracy)}m`;
+  S.currentPos={lat,lon};
+  // Traccia percorso per mappa
+  S.pathCoords.push([lat,lon]);
+  if (S.leafletMap && S.pathLine) {
+    S.pathLine.setLatLngs(S.pathCoords);
+    S.leafletMap.panTo([lat,lon]);
+  }
+
+  if (!S.gpsReady) {
+    S.gpsReady=true; S.lastPos={lat,lon}; S.anchorPos={lat,lon};
+    S.lastAddrPos={lat,lon};
+    fetchAddress(lat, lon);
+    triggerFrag(lat,lon,'primo_fix'); return;
+  }
+
+  const delta = haversine(S.lastPos.lat,S.lastPos.lon,lat,lon);
+  // Solo movimenti reali: minimo 8m, max 600m (anti-teleport)
+  // E controlliamo anche rispetto all'anchor per capire se ci si è spostati davvero
+  const anchorDelta = S.anchorPos ? haversine(S.anchorPos.lat,S.anchorPos.lon,lat,lon) : delta;
+  
+  if (delta > 8 && delta < 600 && anchorDelta > 5) {
+    S.totalDist += delta;
+    S.lastPos = {lat,lon};
+    // Aggiorna anchor solo se ci si sposta stabilmente (>15m dall'anchor)
+    if (anchorDelta > 15) S.anchorPos = {lat,lon};
+    const spd = typeof speed==='number' && speed>=0 ? speed : delta/3;
+    S.speedSamples.push(spd); if(S.speedSamples.length>8) S.speedSamples.shift();
+    // Aggiorna indirizzo strip ogni ~30m di spostamento reale
+    if (S.lastAddrPos) {
+      const addrDelta = haversine(S.lastAddrPos.lat, S.lastAddrPos.lon, lat, lon);
+      if (addrDelta > 30) { S.lastAddrPos={lat,lon}; fetchAddress(lat, lon); }
+    }
+  }
+
+  updateUI();
+  checkTrigger(lat,lon);
+}
+
+function onErr(e) {
+  document.getElementById('gps-txt').textContent = e.code === 1 ? 'GPS negato' : e.code === 3 ? 'GPS timeout' : 'GPS errore';
+  if (e.code === 1) {
+    document.getElementById('search-txt').textContent = 'GPS bloccato — vedi istruzioni sotto';
+    // Banner persistente con istruzioni iOS
+    if (!document.getElementById('gps-banner')) {
+      const b = document.createElement('div');
+      b.id = 'gps-banner';
+      b.style.cssText = 'background:#1a0e0e;border-bottom:1px solid #5a2020;padding:0.9rem 1.5rem;font-size:0.78rem;color:#c07070;letter-spacing:0.06em;line-height:1.9;';
+      b.innerHTML = '⚠ GPS bloccato. Per abilitarlo:<br><strong style="color:#e08080;">Impostazioni → Privacy e sicurezza → Localizzazione → Safari → Consenti</strong><br><span style="color:var(--muted);font-size:0.72rem;">Poi ricarica la pagina.</span>';
+      const header = document.querySelector('#app header');
+      if (header) header.after(b);
+    }
+  }
+}
+
+function checkTrigger(lat,lon) {
+  if (S.isGenerating) return;
+  if (S.totalDist - S.lastFragAt >= INTERVAL) triggerFrag(lat,lon,'distanza');
+}
+
+function triggerFrag(lat,lon,reason) {
+  if (S.isGenerating) return;
+  const now = Date.now();
+  if (reason !== 'primo_fix') {
+    // Cooldown temporale: minimo 3 minuti tra frammenti
+    if (now - S.lastFragTime < 180000) return;
+    // Cooldown spaziale: deve essersi spostato almeno 30m dall'ultimo frammento
+    if (S.lastFragPos) {
+      const distFromLast = haversine(S.lastFragPos.lat, S.lastFragPos.lon, lat, lon);
+      if (distFromLast < 30) return;
+    }
+  }
+  S.lastFragAt = S.totalDist;
+  S.lastFragTime = now;
+  S.lastFragPos = {lat, lon};
+  S.fragCount++;
+  generateFrag(lat,lon,reason);
+}
+
+function updateUI() {
+  const gap = S.totalDist - S.lastFragAt;
+  const pct = Math.min(100,(gap/INTERVAL)*100);
+  document.getElementById('s-dist').textContent=Math.round(S.totalDist);
+  document.getElementById('s-frags').textContent=S.fragCount;
+  document.getElementById('s-time').textContent=timeStr();
+  document.getElementById('prog-fill').style.width=pct+'%';
+  document.getElementById('prog-next').textContent=gap<INTERVAL?`~${Math.round(INTERVAL-gap)}m`:'ricerca...';
+  if (S.epochsVisited.size>0) {
+    const arr=[...S.epochsVisited];
+    document.getElementById('s-layers').textContent=arr.length>1?`${arr.length}`:arr[0]||'—';
+  }
+}
+
+// ══════════════════════════════════════════════
+// RICERCA DATI STORICI
+// Wikipedia Geosearch + Overpass OSM
+// ══════════════════════════════════════════════
+
+// Rileva lingua Wikipedia in base alle coordinate (approssimazione per nazione)
+async function detectWikiLang(lat, lon) {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=en`);
+    const d = await r.json();
+    const cc = d.address?.country_code?.toLowerCase();
+    const map = {
+      'de':'de','at':'de','ch':'de',
+      'fr':'fr','be':'fr',
+      'es':'es','mx':'es','ar':'es','co':'es','pe':'es','cl':'es',
+      'pt':'pt','br':'pt',
+      'jp':'ja','cn':'zh','kr':'ko',
+      'ru':'ru','ua':'ru',
+      'pl':'pl','nl':'nl','se':'sv','no':'no','dk':'da',
+      'gr':'el','tr':'tr','sa':'ar','eg':'ar','dz':'ar','ma':'ar',
+      'in':'hi','id':'id','th':'th',
+    };
+    return map[cc] || 'en';
+  } catch(e) { return 'en'; }
+}
+
+async function fetchWikiLang(lang, lat, lon, wikiData, sources) {
+  try {
+    const wr = await fetch(`https://${lang}.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=600&gslimit=5&format=json&origin=*`);
+    const wd = await wr.json();
+    for (const p of (wd.query?.geosearch||[]).slice(0,3)) {
+      try {
+        const er = await fetch(`https://${lang}.wikipedia.org/w/api.php?action=query&pageids=${p.pageid}&prop=extracts&exintro=true&exsentences=6&format=json&origin=*`);
+        const ed = await er.json();
+        const page = ed.query?.pages?.[p.pageid];
+        if (page?.extract && !wikiData.find(w=>w.title===page.title)) {
+          const extract = page.extract.replace(/<[^>]*>/g,'').slice(0,900);
+          wikiData.push({ title:page.title, extract, dist:Math.round(p.dist), url:`https://${lang}.wikipedia.org/wiki/${encodeURIComponent(page.title)}`, lang });
+          sources.push({ label:page.title + (lang!=='it'?` (${lang.toUpperCase()})` : ''), url:`https://${lang}.wikipedia.org/wiki/${encodeURIComponent(page.title)}` });
+        }
+      } catch(e) {}
+    }
+  } catch(e) {}
+}
+
+async function fetchHistoricalData(lat,lon) {
+  setSearchStatus(true,'Rilevamento lingua locale...');
+  const sources=[], wikiData=[], osmData=[];
+
+  // 1. Rileva lingua locale
+  const localLang = await detectWikiLang(lat, lon);
+
+  // 2. Wikipedia IT (sempre, è la lingua della narrazione)
+  setSearchStatus(true,'Ricerca su Wikipedia IT...');
+  await fetchWikiLang('it', lat, lon, wikiData, sources);
+
+  // 3. Wikipedia lingua locale (se diversa da IT e EN)
+  if (localLang !== 'it' && localLang !== 'en') {
+    setSearchStatus(true,`Ricerca su Wikipedia ${localLang.toUpperCase()}...`);
+    await fetchWikiLang(localLang, lat, lon, wikiData, sources);
+  }
+
+  // 4. Wikipedia EN (sempre come fonte aggiuntiva)
+  if (wikiData.length < 3) {
+    setSearchStatus(true,'Ricerca su Wikipedia EN...');
+    await fetchWikiLang('en', lat, lon, wikiData, sources);
+  }
+
+  // 5. Overpass OSM
+  setSearchStatus(true,'Ricerca su OpenStreetMap...');
+  try {
+    const q=`[out:json][timeout:8];(node["historic"](around:400,${lat},${lon});node["amenity"="place_of_worship"](around:400,${lat},${lon});way["historic"](around:400,${lat},${lon});relation["historic"](around:400,${lat},${lon}););out center tags 8;`;
+    const ovr = await fetch('https://overpass-api.de/api/interpreter',{method:'POST',body:'data='+encodeURIComponent(q)});
+    const ovd = await ovr.json();
+    for (const el of (ovd.elements||[]).slice(0,4)) {
+      const t=el.tags||{};
+      const name=t.name||t['name:it']||t['name:en'];
+      if (name||t.historic) {
+        osmData.push({ name:name||t.historic, type:t.historic||t.amenity||'luogo storico', description:t.description||t['description:it']||t.inscription, startDate:t.start_date, wikipedia:t.wikipedia });
+        if (t.wikipedia) {
+          const wp=t.wikipedia.split(':'); const wl=wp[0]||'it'; const wt=wp.slice(1).join(':');
+          if (wt) sources.push({ label:name||wt, url:`https://${wl}.wikipedia.org/wiki/${encodeURIComponent(wt)}` });
+        }
+      }
+    }
+  } catch(e) {}
+
+  // 6. Wikidata — luoghi storici con coordinate e descrizione
+  setSearchStatus(true,'Ricerca su Wikidata...');
+  try {
+    const sparql = `SELECT ?item ?itemLabel ?description ?inception ?coords WHERE {
+      SERVICE wikibase:around { ?item wdt:P625 ?coords. bd:serviceParam wikibase:center "Point(${lon} ${lat})"^^geo:wktLiteral. bd:serviceParam wikibase:radius "0.4". }
+      OPTIONAL { ?item schema:description ?description. FILTER(LANG(?description)="it" || LANG(?description)="en") }
+      OPTIONAL { ?item wdt:P571 ?inception. }
+      SERVICE wikibase:label { bd:serviceParam wikibase:language "it,en". }
+    } LIMIT 5`;
+    const wr = await fetch('https://query.wikidata.org/sparql?query='+encodeURIComponent(sparql), {
+      headers:{'Accept':'application/sparql-results+json','User-Agent':'Strati/1.0'}
+    });
+    const wd = await wr.json();
+    for (const row of (wd.results?.bindings||[]).slice(0,4)) {
+      const name = row.itemLabel?.value;
+      const desc = row.description?.value;
+      const year = row.inception?.value ? new Date(row.inception.value).getFullYear() : null;
+      const qid = row.item?.value?.split('/').pop();
+      if (name && name !== qid && !wikiData.find(w=>w.title===name)) {
+        wikiData.push({ title:name, extract:(desc||'')+(year?` (${year})`:''), dist:0, url:`https://www.wikidata.org/wiki/${qid}`, lang:'wd' });
+        if (desc) sources.push({ label:name+' (Wikidata)', url:`https://www.wikidata.org/wiki/${qid}` });
+      }
+    }
+  } catch(e) {}
+
+  setSearchStatus(false,'');
+  return { wikiData, osmData, sources };
+}
+
+// ══════════════════════════════════════════════
+// INDIRIZZO INVERSO
+// ══════════════════════════════════════════════
+async function fetchAddress(lat, lon) {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=it&zoom=18&addressdetails=1`);
+    const d = await r.json();
+    const a = d.address || {};
+    // Priorità: strada con numero civico
+    const road = a.road || a.pedestrian || a.footway || a.cycleway || a.path || '';
+    const num = a.house_number ? ' ' + a.house_number : '';
+    const addr = road ? road + num : '';
+    if (addr) {
+      const strip = document.getElementById('addr-strip');
+      if (strip) strip.textContent = addr;
+    }
+    return addr;
+  } catch(e) { return ''; }
+}
+
+// ══════════════════════════════════════════════
+// FOTO DA WIKIPEDIA (immagine articolo più vicino)
+// ══════════════════════════════════════════════
+// Foto rimosse: non è possibile trovare immagini pertinenti in modo affidabile per strade/zone generiche
+
+// ══════════════════════════════════════════════
+// GENERAZIONE
+// ══════════════════════════════════════════════
+async function generateFrag(lat,lon,reason) {
+  S.isGenerating=true; S.currentSources=[]; S.currentApprofondimento=null;
+  document.getElementById('gen-wrap').classList.add('on');
+  document.getElementById('story-text').innerHTML='';
+  document.getElementById('story-text').classList.remove('no-data');
+  document.getElementById('sources-wrap').classList.remove('on');
+  document.getElementById('place-photo-wrap').classList.remove('on');
+  document.getElementById('place-photo-wrap').innerHTML='';
+  document.getElementById('approfondisci-btn').style.display='none';
+  document.getElementById('approfondisci-btn').className='approfondisci-btn';
+  document.getElementById('approfondimento-wrap').classList.remove('on');
+  // Nascondi pulsante audio e mostra "in scrittura..."
+  const _ab = document.getElementById('audio-btn');
+  if (_ab) { _ab.style.opacity='0.35'; _ab.style.pointerEvents='none'; }
+  const _al = document.getElementById('audio-lbl');
+  if (_al) _al.textContent = 'Attendi la fine del testo...';
+  const _ai = document.getElementById('audio-icon');
+  if (_ai) _ai.textContent = '…';
+  ['app-cronologia','app-personaggi','app-connessioni','app-aneddoti'].forEach(id=>{
+    document.getElementById(id).style.display='none';
+  });
+  document.getElementById('frag-n').textContent=S.fragCount;
+  document.getElementById('frag-place').textContent='Ricerca in corso...';
+  document.getElementById('frag-address').textContent='';
+  document.getElementById('frag-coords').textContent=`${lat.toFixed(4)}°N ${lon.toFixed(4)}°E`;
+
+  // Fetch address in parallelo (leggero, sempre utile)
+  fetchAddress(lat, lon).then(addr => {
+    if (addr) document.getElementById('frag-address').textContent = addr;
+  });
+  // Foto: verrà caricata DOPO la risposta di Groq, usando il nome del luogo narrato
+
+  // ── CACHE CHECK ──
+  const cacheKey = `strati_${lat.toFixed(3)}_${lon.toFixed(3)}`;
+  const cached = loadCache(cacheKey);
+  if (cached) {
+    document.getElementById('gen-wrap').classList.remove('on');
+    S.currentText = cached.text;
+    S.currentSources = cached.sources||[];
+    document.getElementById('frag-place').textContent = cached.place || 'Luogo';
+    document.getElementById('epoch-val').textContent = cached.epoch || '—';
+    const badge = '<span class="cache-badge">cache</span>';
+    document.getElementById('frag-place').innerHTML = (cached.place||'Luogo') + badge;
+    if (cached.epoch) S.epochsVisited.add(cached.epoch);
+    if (cached.sources?.length>0) {
+      document.getElementById('sources-list').innerHTML=cached.sources.map(s=>`<a class="source-tag" href="${s.url}" target="_blank" rel="noopener">${s.label}</a>`).join('');
+      document.getElementById('sources-wrap').classList.add('on');
+    }
+    addHistory({lat,lon,place:cached.place,epoch:cached.epoch,text:cached.text});
+    addMapMarker(lat,lon,cached.place,S.fragCount);
+    doFlash(); vibrate([60,30,60]);
+    // auto-speak rimosso: iOS richiede gesto utente diretto sul pulsante ▶
+    typewrite(cached.text, document.getElementById('story-text'), 25, ()=>{
+      document.getElementById('approfondisci-btn').style.display='flex';
+      const ab = document.getElementById('audio-btn');
+      if (ab) { ab.style.opacity='1'; ab.style.pointerEvents='auto'; }
+      document.getElementById('audio-icon').textContent = '▶';
+      document.getElementById('audio-lbl').textContent = 'Ascolta narrazione';
+    });
+    S.isGenerating=false;
+    return;
+  }
+
+  let histData={wikiData:[],osmData:[],sources:[]};
+  try { histData=await fetchHistoricalData(lat,lon); } catch(e){}
+
+  // ── FILTRA: tieni solo dati entro 120m. Se nulla è vicino, zona non documentata ──
+  const CLOSE_RADIUS = 120;
+  histData.wikiData = histData.wikiData.filter(w => w.dist <= CLOSE_RADIUS);
+  // rifiltra sources per tenere solo quelle dei wiki vicini
+  const closeTitles = new Set(histData.wikiData.map(w=>w.title));
+  histData.sources = histData.sources.filter(s => closeTitles.has(s.label.replace(/ \(IT\)|\(EN\)|\(Wikidata\)/g,'').trim()) || histData.osmData.length > 0);
+
+  const noData = histData.wikiData.length===0 && histData.osmData.length===0;
+  const h=new Date().getHours();
+  const tod=h<6?'notte':h<12?'mattina':h<18?'pomeriggio':'sera';
+  const currentAddr = document.getElementById('frag-address').textContent || document.getElementById('addr-strip').textContent || '';
+
+  // ── NESSUN DATO VICINO: mostra messaggio onesto, NIENTE Groq, NIENTE attrazioni lontane ──
+  if (noData) {
+    const addr = currentAddr || 'questa zona';
+    const noDataText = `Sei in ${addr}.\n\nIn quest'area non sono disponibili informazioni storiche documentate nelle fonti aperte.\n\nContinua a camminare.`;
+    S.currentText = noDataText;
+    document.getElementById('gen-wrap').classList.remove('on');
+    document.getElementById('story-text').classList.add('no-data');
+    document.getElementById('frag-place').textContent = addr;
+    document.getElementById('epoch-val').textContent = '—';
+    typewrite(noDataText, document.getElementById('story-text'), 22);
+    addHistory({lat, lon, place: addr, epoch:'—', text: noDataText});
+    addMapMarker(lat, lon, addr, S.fragCount);
+    // Non parla per messaggi "nessun dato"
+    S.isGenerating = false;
+    return;
+  }
+
+  const systemPrompt = `Sei una guida narrativa storica che racconta la storia dei luoghi mentre qualcuno cammina.
+Ricevi dati reali da Wikipedia e OpenStreetMap e li trasformi in narrazione coinvolgente.
+
+FORMATO — rispondi SOLO con JSON valido, nient'altro:
+{
+  "place": "Nome della via, piazza o zona dove si trova fisicamente l'utente (NON il nome di un monumento o attrazione)",
+  "epoch": "Epoca principale (es: 'Medioevo', 'XIX secolo', 'anni Settanta', 'oggi')",
+  "tone": "uno tra: drammatico | documentaristico | poetico | distaccato | solenne",
+  "text": "Testo narrativo completo"
+}
+
+REGOLE TONO:
+- Guerre, massacri, crimini gravi → drammatico
+- Fatti di cronaca, statistiche, dati → distaccato
+- Architettura, arte, luoghi sacri → solenne o poetico
+- Storia economica, politica, quotidiana → documentaristico
+- Paesaggi, natura, memoria collettiva → poetico
+
+REGOLE FONDAMENTALI:
+- L'utente è ESATTAMENTE alle coordinate date. I dati forniti sono di elementi che si trovano a quella stessa posizione (entro 120 metri).
+- NON dire "stai camminando vicino a" o "nei pressi di" — l'utente è già lì.
+- Racconta la storia del luogo come se l'utente ci stesse camminando sopra.
+- Seconda persona: "Stai camminando su...", "Sotto i tuoi piedi...", "Qui, dove ti trovi..."
+- Fatti precisi, date, nomi reali — MAI inventare
+- 120-200 parole, vai a capo spesso`;
+
+  let wikiStr='';
+  if (histData.wikiData.length>0) {
+    wikiStr='\nFONTI WIKIPEDIA (tutti entro 120m dalla posizione utente):\n'+histData.wikiData.map(w=>`— ${w.title} (a ${w.dist}m):\n${w.extract}`).join('\n\n');
+  }
+  let osmStr='';
+  if (histData.osmData.length>0) {
+    osmStr='\nFONTI OPENSTREETMAP:\n'+histData.osmData.map(o=>`— ${o.name} (${o.type})${o.startDate?' · '+o.startDate:''}${o.description?' · '+o.description:''}`).join('\n');
+  }
+
+  const userPrompt=`POSIZIONE UTENTE: ${lat.toFixed(5)}°N, ${lon.toFixed(5)}°E
+Indirizzo: ${currentAddr || '(non disponibile)'}
+Ora: ${timeStr()} (${tod}) · Frammento n.${S.fragCount}
+
+${wikiStr}
+${osmStr}
+
+Genera la narrazione per questa posizione esatta.`;
+
+  try {
+    const parsed = await callOpenAI(systemPrompt, userPrompt);
+
+    S.currentText = parsed.text || '';
+    S.currentSources = histData.sources;
+
+    document.getElementById('frag-place').textContent = parsed.place || currentAddr || 'Luogo';
+    document.getElementById('epoch-val').textContent = parsed.epoch || '—';
+    if (parsed.epoch) S.epochsVisited.add(parsed.epoch);
+
+    if (histData.sources.length>0) {
+      document.getElementById('sources-list').innerHTML=histData.sources.map(s=>`<a class="source-tag" href="${s.url}" target="_blank" rel="noopener">${s.label}</a>`).join('');
+      document.getElementById('sources-wrap').classList.add('on');
+    }
+
+    // Salva in cache
+    saveCache(cacheKey, { place:parsed.place, epoch:parsed.epoch, text:parsed.text, sources:histData.sources });
+
+    addHistory({lat,lon,place:parsed.place||currentAddr,epoch:parsed.epoch,text:parsed.text});
+    addMapMarker(lat,lon,parsed.place||currentAddr,S.fragCount);
+    doFlash(); vibrate([60,30,60]);
+
+    document.getElementById('gen-wrap').classList.remove('on');
+
+    // ── AUDIO: parte subito ──
+    // auto-speak rimosso: iOS richiede gesto utente diretto sul pulsante ▶
+
+    const speed=({drammatico:20,documentaristico:26,poetico:30,distaccato:22,solenne:28})[parsed.tone]||25;
+    typewrite(parsed.text, document.getElementById('story-text'), speed, ()=>{
+      document.getElementById('approfondisci-btn').style.display='flex';
+      // Riabilita pulsante audio
+      const ab = document.getElementById('audio-btn');
+      if (ab) { ab.style.opacity='1'; ab.style.pointerEvents='auto'; }
+      document.getElementById('audio-icon').textContent = '▶';
+      document.getElementById('audio-lbl').textContent = 'Ascolta narrazione';
+    });
+
+  } catch(e) {
+    console.error('Groq error:',e);
+    document.getElementById('gen-wrap').classList.remove('on');
+    document.getElementById('story-text').textContent='Errore nella narrazione. Riprova tra qualche metro.';
+    document.getElementById('frag-place').textContent='Errore';
+  } finally { S.isGenerating=false; }
+}
+
+// ══════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════
+function setSearchStatus(on,msg) {
+  document.getElementById('search-dot').classList.toggle('on',on);
+  document.getElementById('search-txt').textContent=msg;
+}
+
+function addHistory(item) { S.history.unshift(item); renderHistory(); }
+
+function renderHistory() {
+  document.getElementById('hist-list').innerHTML=S.history.slice(1,8).map((h,i)=>`
+    <div class="hist-item" onclick="replayHist(${i+1})">
+      <div class="hist-place">${h.place||'—'}</div>
+      <div class="hist-epoch">${h.epoch||'—'}</div>
+      <div class="hist-preview">${(h.text||'').slice(0,100).replace(/\n/g,' ')}${(h.text||'').length>100?'…':''}</div>
+    </div>`).join('');
+}
+
+function replayHist(idx) {
+  const h=S.history[idx]; if(!h) return;
+  S.currentText=h.text;
+  S.currentApprofondimento=null;
+  document.getElementById('frag-place').textContent=h.place||'—';
+  document.getElementById('epoch-val').textContent=h.epoch||'—';
+  document.getElementById('frag-n').textContent=S.history.length-idx;
+  document.getElementById('story-text').innerHTML='';
+  // Reset approfondimento
+  document.getElementById('approfondimento-wrap').classList.remove('on');
+  document.getElementById('approfondisci-btn').className='approfondisci-btn';
+  document.getElementById('approfondisci-btn').style.display='none';
+  ['app-cronologia','app-personaggi','app-connessioni','app-aneddoti'].forEach(id=>{
+    document.getElementById(id).style.display='none';
+  });
+  typewrite(h.text,document.getElementById('story-text'),20,()=>{
+    document.getElementById('approfondisci-btn').style.display='flex';
+  });
+}
+
+let twT=null;
+function typewrite(text,el,speed=25,onDone) {
+  // Cancella solo il typewriter globale (narrazione principale)
+  // Per approfondimento sections usiamo un timer locale
+  const isMain = (el === document.getElementById('story-text'));
+  if (isMain && twT) clearTimeout(twT);
+  el.innerHTML=''; let i=0;
+  let localTimer=null;
+  const cur=document.createElement('span'); cur.className='cursor-blink'; el.appendChild(cur);
+  function next() {
+    if(i<text.length) {
+      const c=text[i]; cur.before(c==='\n'?document.createElement('br'):document.createTextNode(c)); i++;
+      const t = setTimeout(next,(c==='.'||c===','||c==='…')?speed*5:speed);
+      if (isMain) twT=t; else localTimer=t;
+    } else { cur.remove(); if(onDone) onDone(); }
+  }
+  next();
+}
+
+function haversine(la1,lo1,la2,lo2) {
+  const R=6371000,dL=(la2-la1)*Math.PI/180,dO=(lo2-lo1)*Math.PI/180;
+  const a=Math.sin(dL/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dO/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function timeStr() {
+  const n=new Date();
+  return `${n.getHours().toString().padStart(2,'0')}:${n.getMinutes().toString().padStart(2,'0')}`;
+}
+
+function doFlash() { const el=document.getElementById('flash'); el.classList.add('on'); setTimeout(()=>el.classList.remove('on'),120); }
+function vibrate(p) { if(navigator.vibrate) navigator.vibrate(p); }
+
+function startApp() {
+  if (!S.openaiKey) {
+    alert('Inserisci e verifica la Groq API Key prima di iniziare.'); return;
+  }
+  dbg('startApp() — avvio loop silenzioso');
+  startSilentLoop();
+
+  S.startTime = new Date();
+  startTracking();
+  document.getElementById('splash').classList.add('hidden');
+  setTimeout(() => {
+    document.getElementById('splash').style.display = 'none';
+    document.getElementById('app').classList.add('visible');
+    dbg('app visibile — voce: ' + (_iosVoice ? _iosVoice.name : 'non ancora caricata'));
+    setTimeout(() => { if (!S.gpsReady) document.getElementById('gps-txt').textContent = 'GPS lento — vai all\'aperto'; }, 8000);
+  }, 1200);
+}
+
+setInterval(()=>document.getElementById('s-time').textContent=timeStr(),60000);
+
+// Lista voci disponibili al boot
+window.addEventListener('DOMContentLoaded', () => {
+  bioInit();
+  const synth = window.speechSynthesis;
+  if (!synth) { dbg('✗ speechSynthesis non disponibile!', '#c03030'); return; }
+  // Le voci potrebbero non essere ancora caricate al DOMContentLoaded
+  const tryList = () => {
+    const voices = synth.getVoices();
+    if (voices.length > 0) {
+      _listVoices();
+      _resolveVoice(); // cacha subito la miglior voce IT
+    }
+  };
+  synth.onvoiceschanged = () => { tryList(); };
+  tryList(); // prova subito, se già disponibili
+});
+
+// ══════════════════════════════════════════════
+// BIOMETRIA — salva/carica chiavi con Face ID / Touch ID
+// Usa WebAuthn PRF extension per derivare una chiave AES-GCM
+// Fallback: cifratura con password fissa (dispositivo-specifico)
+// ══════════════════════════════════════════════
+const BIO_KEY = 'strati_bio_v1';
+
+async function bioInit() {
+  const saved = localStorage.getItem(BIO_KEY);
+  if (saved) {
+    document.getElementById('start-btn-label').textContent = '▶ Inizia a camminare';
+    document.getElementById('manual-start-link').style.display = 'flex';
+    document.getElementById('manual-start-link').style.gap = '0';
+  } else {
+    document.getElementById('start-btn-label').textContent = 'Inizia a camminare';
+  }
+}
+
+// Pulsante unificato
+async function unifiedStart() {
+  // Sblocca GPS immediatamente (sincrono)
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(p => { window._iosGps = p; }, ()=>{}, { enableHighAccuracy:true, timeout:20000, maximumAge:0 });
+  }
+
+  // Chiavi già integrate — parte direttamente
+  setTimeout(() => startApp(), 200);
+}
+
+function startAppDirect() {
+  if (!S.openaiKey) {
+    document.getElementById('unified-st').textContent = '✗ Inserisci e verifica la Groq API Key';
+    document.getElementById('unified-st').className = 'key-st err';
+    return;
+  }
+  startApp();
+}
+
+function bioClearInline() {
+  if (!confirm('Eliminare le chiavi salvate?')) return;
+  localStorage.removeItem(BIO_KEY);
+  document.getElementById('manual-start-link').style.display = 'none';
+  document.getElementById('start-btn-label').textContent = 'Inizia a camminare';
+  document.getElementById('unified-st').textContent = 'Chiavi eliminate';
+  document.getElementById('unified-st').className = 'key-st';
+  S.openaiKey = null;
+  document.getElementById('gem-key').value = '';
+  document.getElementById('gem-st').textContent = '→ Ottienila gratis su console.groq.com';
+  document.getElementById('gem-st').className = 'key-st req';
+}
+
+// Chiave AES derivata da un segreto fisso + fingerprint del dispositivo
+// Non è crittografia a prova di NSA, ma protegge da lettura accidentale
+async function deriveKey(salt) {
+  const raw = new TextEncoder().encode('strati-' + navigator.userAgent.slice(0,50) + salt);
+  const base = await crypto.subtle.importKey('raw', raw, 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name:'PBKDF2', salt: new TextEncoder().encode(salt), iterations:100000, hash:'SHA-256' },
+    base, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']
+  );
+}
+
+async function bioSave() {
+  // Ora gestito da bioSaveSilent — questa è tenuta per retrocompatibilità
+  await bioSaveSilent();
+}
+
+async function bioLoad() {
+  const saved = localStorage.getItem(BIO_KEY);
+  if (!saved) return;
+  try {
+    await bioLoadSilent();
+  } catch(e) {}
+}
+
+// Versione silenziosa (usata da unifiedStart)
+async function bioLoadSilent() {
+  const saved = localStorage.getItem(BIO_KEY);
+  if (!saved) return;
+
+  // Nessun WebAuthn — decifra direttamente con AES-GCM
+  const data = JSON.parse(saved);
+  const key = await deriveKey(data.salt);
+  const iv = new Uint8Array(atob(data.iv).split('').map(c=>c.charCodeAt(0)));
+  const ct = new Uint8Array(atob(data.ct).split('').map(c=>c.charCodeAt(0)));
+  const dec = await crypto.subtle.decrypt({ name:'AES-GCM', iv }, key, ct);
+  const payload = JSON.parse(new TextDecoder().decode(dec));
+
+  if (payload.groq) {
+    S.openaiKey = payload.groq;
+    document.getElementById('gem-key').value = payload.groq;
+  }
+}
+
+async function bioSaveSilent() {
+  const groqKey = document.getElementById('gem-key').value.trim();
+  if (!groqKey) return;
+
+  const salt = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
+  const key = await deriveKey(salt);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = await crypto.subtle.encrypt(
+    { name:'AES-GCM', iv }, key,
+    new TextEncoder().encode(JSON.stringify({ groq: groqKey }))
+  );
+  const data = {
+    salt,
+    iv: btoa(String.fromCharCode(...new Uint8Array(iv))),
+    ct: btoa(String.fromCharCode(...new Uint8Array(enc)))
+  };
+  localStorage.setItem(BIO_KEY, JSON.stringify(data));
+  document.getElementById('start-btn-label').textContent = '▶ Inizia a camminare';
+  document.getElementById('manual-start-link').style.display = 'flex';
+}
+
+function bioClear() {
+  // Ora gestito da bioClearInline
+  bioClearInline();
+}
+
+// Avvia controllo biometrico al caricamento
+window.addEventListener('DOMContentLoaded', () => {
+  bioInit();
+  checkGpsPermission();
+});
+
+function checkGpsPermission() {
+  if (!navigator.permissions) return;
+  navigator.permissions.query({ name: 'geolocation' }).then(result => {
+    if (result.state === 'denied') {
+      document.getElementById('gps-denied-msg').style.display = 'block';
+    }
+    result.onchange = () => {
+      if (result.state === 'denied') document.getElementById('gps-denied-msg').style.display = 'block';
+      else document.getElementById('gps-denied-msg').style.display = 'none';
+    };
+  }).catch(() => {});
+}
+// ══════════════════════════════════════════════
+function saveCache(key, data) {
+  try {
+    const all = JSON.parse(localStorage.getItem('strati_cache')||'{}');
+    all[key] = { ...data, ts: Date.now() };
+    // Mantieni max 100 voci
+    const keys = Object.keys(all);
+    if (keys.length > 100) {
+      keys.sort((a,b)=>all[a].ts-all[b].ts).slice(0,keys.length-100).forEach(k=>delete all[k]);
+    }
+    localStorage.setItem('strati_cache', JSON.stringify(all));
+  } catch(e) {}
+}
+
+function loadCache(key) {
+  try {
+    const all = JSON.parse(localStorage.getItem('strati_cache')||'{}');
+    const v = all[key];
+    if (!v) return null;
+    // Cache valida per 30 giorni
+    if (Date.now()-v.ts > 30*24*3600*1000) return null;
+    return v;
+  } catch(e) { return null; }
+}
+
+// ══════════════════════════════════════════════
+// MAPPA LEAFLET
+// ══════════════════════════════════════════════
+function toggleMap() {
+  S.mapVisible = !S.mapVisible;
+  const btn = document.getElementById('map-toggle-btn');
+  const container = document.getElementById('map-container');
+  btn.classList.toggle('active', S.mapVisible);
+  document.getElementById('map-icon').textContent = S.mapVisible ? '◉' : '◎';
+  document.getElementById('map-btn-txt').textContent = S.mapVisible ? ' Nascondi mappa' : ' Mostra percorso su mappa';
+  container.classList.toggle('visible', S.mapVisible);
+
+  if (S.mapVisible && !S.leafletMap) {
+    initLeafletMap();
+  } else if (S.mapVisible && S.leafletMap) {
+    S.leafletMap.invalidateSize();
+    if (S.pathCoords.length > 0) S.leafletMap.fitBounds(S.pathCoords);
+  }
+}
+
+function initLeafletMap() {
+  const center = S.currentPos ? [S.currentPos.lat, S.currentPos.lon] : [41.9, 12.5];
+  S.leafletMap = L.map('map', { zoomControl:false, attributionControl:false }).setView(center, 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(S.leafletMap);
+
+  S.markerLayer = L.layerGroup().addTo(S.leafletMap);
+  S.pathLine = L.polyline(S.pathCoords, {
+    color: '#c9a84c', weight: 2, opacity: 0.7, dashArray: '4 4'
+  }).addTo(S.leafletMap);
+
+  // Aggiunge marker già esistenti
+  S.history.forEach((h,i) => {
+    if (h.lat && h.lon) addLeafletMarker(S.leafletMap, h.lat, h.lon, h.place, S.history.length-i, true);
+  });
+}
+
+function addMapMarker(lat, lon, place, n) {
+  if (S.leafletMap) {
+    addLeafletMarker(S.leafletMap, lat, lon, place, n, false);
+    S.pathLine.setLatLngs(S.pathCoords);
+  }
+}
+
+function addLeafletMarker(map, lat, lon, place, n, silent) {
+  const icon = L.divIcon({
+    html: `<div style="width:20px;height:20px;border-radius:50%;background:#0c0b09;border:1.5px solid #c9a84c;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:7px;color:#c9a84c;line-height:1;">${n}</div>`,
+    className: '', iconSize: [20,20], iconAnchor: [10,10]
+  });
+  const marker = L.marker([lat,lon], {icon}).addTo(S.markerLayer||map);
+  marker.bindPopup(`<span style="font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:#c9a84c;">${place||'—'}</span>`, {className:'strati-popup'});
+  if (!silent) { map.panTo([lat,lon]); }
+}
+
+// ══════════════════════════════════════════════
+// FINE SESSIONE
+// ══════════════════════════════════════════════
+function endSession() {
+  if (S.history.length === 0) {
+    alert('Nessuna narrazione registrata ancora. Cammina un po\'!');
+    return;
+  }
+  const now = new Date();
+  const dur = S.startTime ? Math.round((now - S.startTime)/60000) : '—';
+
+  document.getElementById('end-date').textContent =
+    now.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) + ' · ' + timeStr();
+  document.getElementById('end-dist').textContent = Math.round(S.totalDist);
+  document.getElementById('end-places').textContent = S.fragCount;
+  document.getElementById('end-epochs-n').textContent = S.epochsVisited.size || '—';
+  document.getElementById('end-duration').textContent = dur;
+
+  // Epoche
+  const epochsArr = [...S.epochsVisited];
+  document.getElementById('end-epochs-list').innerHTML =
+    epochsArr.map(e=>`<span class="epoch-pill">${e}</span>`).join('') || '<span style="color:var(--muted);font-size:0.75rem;">nessuna rilevata</span>';
+
+  // Log narrativo
+  document.getElementById('end-log-list').innerHTML = [...S.history].reverse().map((h,i)=>`
+    <div class="end-log-item">
+      <div class="end-log-place">${i+1}. ${h.place||'—'}</div>
+      <div class="end-log-epoch">${h.epoch||'—'}</div>
+      <div class="end-log-text">${(h.text||'').replace(/\n/g,'<br>')}</div>
+    </div>`).join('');
+
+  document.getElementById('end-overlay').classList.add('visible');
+
+  // Mappa fine sessione
+  setTimeout(()=>{
+    if (!S.leafletEndMap && S.pathCoords.length > 0) {
+      S.leafletEndMap = L.map('end-map', {zoomControl:false, attributionControl:false})
+        .fitBounds(S.pathCoords.length>1 ? S.pathCoords : [[S.pathCoords[0][0]-0.005, S.pathCoords[0][1]-0.005],[S.pathCoords[0][0]+0.005, S.pathCoords[0][1]+0.005]]);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(S.leafletEndMap);
+      L.polyline(S.pathCoords, {color:'#c9a84c',weight:2,opacity:0.7,dashArray:'4 4'}).addTo(S.leafletEndMap);
+      [...S.history].reverse().forEach((h,i)=>{
+        if (h.lat&&h.lon) addLeafletMarker(S.leafletEndMap,h.lat,h.lon,h.place,i+1,true);
+      });
+    } else if (S.leafletEndMap) {
+      S.leafletEndMap.invalidateSize();
+    }
+  }, 300);
+}
+
+function closeEndSession() {
+  document.getElementById('end-overlay').classList.remove('visible');
+}
+
+// ══════════════════════════════════════════════
+// ESPORTA DIARIO HTML
+// ══════════════════════════════════════════════
+function exportDiary() {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const dur = S.startTime ? Math.round((now-S.startTime)/60000) : '—';
+  const epochsArr = [...S.epochsVisited];
+
+  const entriesHtml = [...S.history].reverse().map((h,i)=>`
+    <div class="entry">
+      <div class="entry-num">${i+1}</div>
+      <div class="entry-body">
+        <div class="entry-place">${h.place||'Luogo sconosciuto'}</div>
+        <div class="entry-epoch">${h.epoch||'—'}</div>
+        <div class="entry-coords">${h.lat?.toFixed(4)}°N ${h.lon?.toFixed(4)}°E</div>
+        <div class="entry-text">${(h.text||'').replace(/\n/g,'<br>')}</div>
+      </div>
+    </div>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STRATI — Diario del ${dateStr}</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0c0b09; --paper:#13120e; --gold:#c9a84c; --gold-dim:#6b5a2a; --text:#d4cfc0; --muted:#5a5548; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'IBM Plex Mono',monospace; padding:2rem 1.5rem 4rem; max-width:680px; margin:0 auto; }
+  .cover { text-align:center; padding:4rem 0 3rem; border-bottom:1px solid #1e1c18; margin-bottom:3rem; }
+  .cover-eye { font-size:0.75rem; letter-spacing:0.5em; color:var(--muted); text-transform:uppercase; margin-bottom:1rem; }
+  .cover-title { font-family:'Playfair Display',serif; font-size:clamp(3rem,15vw,7rem); color:var(--gold); font-weight:400; font-style:italic; letter-spacing:0.1em; line-height:1; }
+  .cover-date { font-size:0.8rem; letter-spacing:0.2em; color:var(--muted); margin-top:1rem; }
+  .stats { display:flex; justify-content:space-around; margin-bottom:3rem; padding:1.5rem; border:1px solid #1e1c18; }
+  .stat { text-align:center; }
+  .stat-val { font-family:'Playfair Display',serif; font-size:1.6rem; color:var(--gold); display:block; font-style:italic; }
+  .stat-lbl { font-size:0.68rem; letter-spacing:0.25em; color:var(--muted); text-transform:uppercase; }
+  .epochs { margin-bottom:3rem; }
+  .section-lbl { font-size:0.72rem; letter-spacing:0.4em; color:var(--muted); text-transform:uppercase; margin-bottom:0.8rem; }
+  .epoch-pill { display:inline-block; font-size:0.72rem; color:var(--gold-dim); border:1px solid #2a2418; padding:0.25rem 0.55rem; margin:0.2rem; }
+  .entry { display:flex; gap:1.5rem; margin-bottom:2.5rem; padding-bottom:2.5rem; border-bottom:1px solid #131210; }
+  .entry-num { font-family:'Playfair Display',serif; font-size:2.5rem; color:#1e1c18; font-style:italic; flex-shrink:0; line-height:1; width:2.5rem; text-align:right; }
+  .entry-place { font-family:'Playfair Display',serif; font-size:1rem; color:var(--gold); font-style:italic; margin-bottom:0.3rem; }
+  .entry-epoch { font-size:0.72rem; letter-spacing:0.2em; color:var(--muted); margin-bottom:0.2rem; }
+  .entry-coords { font-size:0.68rem; letter-spacing:0.12em; color:#5a5548; margin-bottom:0.8rem; }
+  .entry-text { font-size:0.85rem; line-height:2; color:var(--text); }
+  .footer { text-align:center; padding-top:2rem; font-size:0.72rem; letter-spacing:0.3em; color:#5a5548; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="cover">
+  <div class="cover-eye">Una camminata nella memoria</div>
+  <div class="cover-title">Strati</div>
+  <div class="cover-date">${dateStr}</div>
+</div>
+<div class="stats">
+  <div class="stat"><span class="stat-val">${Math.round(S.totalDist)}</span><span class="stat-lbl">Metri</span></div>
+  <div class="stat"><span class="stat-val">${S.fragCount}</span><span class="stat-lbl">Luoghi</span></div>
+  <div class="stat"><span class="stat-val">${epochsArr.length||'—'}</span><span class="stat-lbl">Epoche</span></div>
+  <div class="stat"><span class="stat-val">${dur}</span><span class="stat-lbl">Minuti</span></div>
+</div>
+${epochsArr.length>0?`<div class="epochs"><div class="section-lbl">Epoche attraversate</div>${epochsArr.map(e=>`<span class="epoch-pill">${e}</span>`).join('')}</div>`:''}
+<div class="section-lbl" style="margin-bottom:1.5rem;">Diario</div>
+${entriesHtml}
+<div class="footer">Generato da STRATI · ${dateStr}</div>
+</body>
+</html>`;
+
+  const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `strati_${now.toISOString().slice(0,10)}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
