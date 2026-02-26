@@ -453,16 +453,6 @@
     Dall'antichità alla cronaca di ieri.
   </div>
 
-  <!-- BIOMETRIA — CARICA (appare in cima se ci sono chiavi salvate) -->
-  <div class="key-block" id="bio-load-block" style="display:none;">
-    <span class="key-lbl">🔐 Chiavi salvate</span>
-    <div class="key-row">
-      <button class="key-btn" style="flex:1;" onclick="bioLoad()">Carica con Face ID / Touch ID</button>
-      <button class="key-btn" onclick="bioClear()" title="Elimina chiavi salvate">✕</button>
-    </div>
-    <div class="key-st" id="bio-load-st"></div>
-  </div>
-
   <!-- GROQ KEY — OBBLIGATORIA -->
   <div class="key-block">
     <span class="key-lbl">✦ Groq API Key — necessaria per la narrazione</span>
@@ -483,13 +473,19 @@
     <div class="key-st" id="el-st">Senza chiave: voce di sistema</div>
   </div>
 
-  <!-- BIOMETRIA — SALVA (sempre visibile) -->
-  <div class="key-block" id="bio-save-block">
-    <button class="key-btn" style="width:100%;border-color:var(--gold-dim);color:var(--gold-dim);" onclick="bioSave()">🔑 Usa Passkey — salva chiavi con Face ID / Touch ID</button>
-    <div class="key-st" id="bio-save-st">Le chiavi vengono cifrate e salvate sul dispositivo</div>
+  <!-- PULSANTE UNICO: Passkey + Start -->
+  <div style="margin-top:2.5rem;width:100%;max-width:340px;display:flex;flex-direction:column;align-items:center;gap:0.6rem;">
+    <button class="start-btn" id="start-btn" style="margin-top:0;width:100%;" onclick="unifiedStart()">
+      <span id="start-btn-label">🔑 Inizia con Passkey</span>
+    </button>
+    <div class="key-st" id="unified-st" style="text-align:center;min-height:1.1rem;"></div>
+    <!-- link discreto per chi vuole entrare senza passkey dopo aver inserito le chiavi manualmente -->
+    <div id="manual-start-link" style="display:none;">
+      <span style="font-size:0.75rem;color:var(--muted);letter-spacing:0.12em;cursor:pointer;text-decoration:underline;text-decoration-color:#3a3830;" onclick="startAppDirect()">Entra senza salvare</span>
+      <span style="font-size:0.75rem;color:#3a3830;letter-spacing:0.12em;"> · </span>
+      <span style="font-size:0.75rem;color:var(--muted);letter-spacing:0.12em;cursor:pointer;" onclick="bioClearInline()" title="Elimina chiavi salvate">✕ dimentica</span>
+    </div>
   </div>
-
-  <button class="start-btn" id="start-btn" onclick="if(navigator.geolocation){navigator.geolocation.getCurrentPosition(function(p){window._iosGps=p},function(){},{ enableHighAccuracy:true,timeout:20000,maximumAge:0 })}; startApp()">Inizia a camminare</button>
   <div class="s-warning">
     Usa le cuffie · Cammina in luoghi sicuri<br>
     Dati storici da Wikipedia e OpenStreetMap
@@ -1578,12 +1574,82 @@ if(window.speechSynthesis) window.speechSynthesis.onvoiceschanged=()=>{};
 const BIO_KEY = 'strati_bio_v1';
 
 async function bioInit() {
-  // Controlla se ci sono chiavi salvate
   const saved = localStorage.getItem(BIO_KEY);
   if (saved) {
-    document.getElementById('bio-load-block').style.display = 'block';
+    // Chiavi salvate → pulsante principale è "Inizia con Passkey"
+    document.getElementById('start-btn-label').textContent = '🔑 Inizia con Passkey';
+    document.getElementById('manual-start-link').style.display = 'flex';
+    document.getElementById('manual-start-link').style.gap = '0';
+  } else {
+    // Nessuna chiave salvata → pulsante è "Inizia a camminare"
+    document.getElementById('start-btn-label').textContent = 'Inizia a camminare';
   }
-  // bio-save-block è sempre visibile (già nel HTML)
+}
+
+// Pulsante unificato
+async function unifiedStart() {
+  // Sblocca GPS immediatamente (sincrono)
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(p => { window._iosGps = p; }, ()=>{}, { enableHighAccuracy:true, timeout:20000, maximumAge:0 });
+  }
+
+  const saved = localStorage.getItem(BIO_KEY);
+  const st = document.getElementById('unified-st');
+
+  if (saved) {
+    // Ha chiavi salvate → carica con passkey poi parte
+    st.textContent = 'Autenticazione...';
+    st.className = 'key-st';
+    try {
+      await bioLoadSilent();
+      if (!S.openaiKey) { st.textContent = '✗ Impossibile caricare le chiavi'; st.className='key-st err'; return; }
+      st.textContent = '✓ Chiavi caricate';
+      st.className = 'key-st ok';
+      setTimeout(() => startApp(), 400);
+    } catch(e) {
+      st.textContent = '✗ ' + (e.message || 'Autenticazione fallita');
+      st.className = 'key-st err';
+    }
+  } else {
+    // Nessuna chiave salvata → parte direttamente (deve aver inserito key manualmente)
+    if (!S.openaiKey) {
+      st.textContent = '✗ Inserisci e verifica la Groq API Key';
+      st.className = 'key-st err';
+      return;
+    }
+    // Tenta salvataggio silenzioso con passkey
+    try {
+      await bioSaveSilent();
+      st.textContent = '🔑 Chiavi salvate per la prossima volta';
+      st.className = 'key-st ok';
+    } catch(e) { /* silenzioso se fallisce */ }
+    setTimeout(() => startApp(), 200);
+  }
+}
+
+function startAppDirect() {
+  if (!S.openaiKey) {
+    document.getElementById('unified-st').textContent = '✗ Inserisci e verifica la Groq API Key';
+    document.getElementById('unified-st').className = 'key-st err';
+    return;
+  }
+  startApp();
+}
+
+function bioClearInline() {
+  if (!confirm('Eliminare le chiavi salvate?')) return;
+  localStorage.removeItem(BIO_KEY);
+  document.getElementById('manual-start-link').style.display = 'none';
+  document.getElementById('start-btn-label').textContent = 'Inizia a camminare';
+  document.getElementById('unified-st').textContent = 'Chiavi eliminate';
+  document.getElementById('unified-st').className = 'key-st';
+  S.openaiKey = null; S.elKey = null;
+  document.getElementById('gem-key').value = '';
+  document.getElementById('el-key').value = '';
+  document.getElementById('gem-st').textContent = '→ Ottienila gratis su console.groq.com';
+  document.getElementById('gem-st').className = 'key-st req';
+  document.getElementById('el-st').textContent = 'Senza chiave: voce di sistema';
+  document.getElementById('el-st').className = 'key-st';
 }
 
 // Chiave AES derivata da un segreto fisso + fingerprint del dispositivo
@@ -1598,122 +1664,93 @@ async function deriveKey(salt) {
 }
 
 async function bioSave() {
-  const groqKey = document.getElementById('gem-key').value.trim();
-  const elKey = document.getElementById('el-key').value.trim();
-  if (!groqKey) {
-    document.getElementById('bio-save-st').textContent = '✗ Inserisci almeno la Groq key';
-    document.getElementById('bio-save-st').className = 'key-st err'; return;
-  }
-
-  document.getElementById('bio-save-st').textContent = 'Autenticazione...';
-  document.getElementById('bio-save-st').className = 'key-st';
-
-  try {
-    // Tenta WebAuthn se disponibile
-    let authenticated = false;
-    if (window.PublicKeyCredential) {
-      try {
-        await navigator.credentials.get({
-          publicKey: {
-            challenge: crypto.getRandomValues(new Uint8Array(32)),
-            rpId: location.hostname || 'localhost',
-            userVerification: 'required',
-            timeout: 30000,
-          }
-        });
-        authenticated = true;
-      } catch(e) {
-        // WebAuthn fallita (es. nessuna chiave registrata) — usa fallback
-        authenticated = true; // permettiamo comunque il salvataggio
-      }
-    } else {
-      authenticated = true;
-    }
-
-    if (!authenticated) throw new Error('Autenticazione fallita');
-
-    // Cifra le chiavi con AES-GCM
-    const salt = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
-    const key = await deriveKey(salt);
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const payload = JSON.stringify({ groq: groqKey, el: elKey });
-    const enc = await crypto.subtle.encrypt(
-      { name:'AES-GCM', iv },
-      key,
-      new TextEncoder().encode(payload)
-    );
-    const data = {
-      salt,
-      iv: btoa(String.fromCharCode(...new Uint8Array(iv))),
-      ct: btoa(String.fromCharCode(...new Uint8Array(enc)))
-    };
-    localStorage.setItem(BIO_KEY, JSON.stringify(data));
-
-    document.getElementById('bio-save-st').textContent = '✓ Chiavi salvate';
-    document.getElementById('bio-save-st').className = 'key-st ok';
-    document.getElementById('bio-load-block').style.display = 'block';
-  } catch(e) {
-    document.getElementById('bio-save-st').textContent = '✗ ' + (e.message || 'Errore');
-    document.getElementById('bio-save-st').className = 'key-st err';
-  }
+  // Ora gestito da bioSaveSilent — questa è tenuta per retrocompatibilità
+  await bioSaveSilent();
 }
 
 async function bioLoad() {
   const saved = localStorage.getItem(BIO_KEY);
   if (!saved) return;
-
-  document.getElementById('bio-load-st').textContent = 'Autenticazione...';
-  document.getElementById('bio-load-st').className = 'key-st';
-
   try {
-    // Tenta WebAuthn
-    if (window.PublicKeyCredential) {
-      try {
-        await navigator.credentials.get({
-          publicKey: {
-            challenge: crypto.getRandomValues(new Uint8Array(32)),
-            rpId: location.hostname || 'localhost',
-            userVerification: 'required',
-            timeout: 30000,
-          }
-        });
-      } catch(e) { /* fallback silenzioso */ }
-    }
+    await bioLoadSilent();
+  } catch(e) {}
+}
 
-    const data = JSON.parse(saved);
-    const key = await deriveKey(data.salt);
-    const iv = new Uint8Array(atob(data.iv).split('').map(c=>c.charCodeAt(0)));
-    const ct = new Uint8Array(atob(data.ct).split('').map(c=>c.charCodeAt(0)));
-    const dec = await crypto.subtle.decrypt({ name:'AES-GCM', iv }, key, ct);
-    const payload = JSON.parse(new TextDecoder().decode(dec));
+// Versione silenziosa (usata da unifiedStart)
+async function bioLoadSilent() {
+  const saved = localStorage.getItem(BIO_KEY);
+  if (!saved) return;
 
-    // Popola i campi
-    if (payload.groq) {
-      document.getElementById('gem-key').value = payload.groq;
-      S.openaiKey = payload.groq;
-      document.getElementById('gem-st').textContent = '✓ Groq caricata da Face ID';
-      document.getElementById('gem-st').className = 'key-st ok';
-    }
-    if (payload.el) {
-      document.getElementById('el-key').value = payload.el;
-      S.elKey = payload.el;
-      loadItalianVoice(payload.el);
-      document.getElementById('el-st').textContent = '✓ ElevenLabs caricata da Face ID';
-      document.getElementById('el-st').className = 'key-st ok';
-    }
-    document.getElementById('bio-load-st').textContent = '✓ Chiavi caricate';
-    document.getElementById('bio-load-st').className = 'key-st ok';
-  } catch(e) {
-    document.getElementById('bio-load-st').textContent = '✗ Autenticazione fallita';
-    document.getElementById('bio-load-st').className = 'key-st err';
+  if (window.PublicKeyCredential) {
+    try {
+      await navigator.credentials.get({
+        publicKey: {
+          challenge: crypto.getRandomValues(new Uint8Array(32)),
+          rpId: location.hostname || 'localhost',
+          userVerification: 'required',
+          timeout: 30000,
+        }
+      });
+    } catch(e) { /* fallback */ }
+  }
+
+  const data = JSON.parse(saved);
+  const key = await deriveKey(data.salt);
+  const iv = new Uint8Array(atob(data.iv).split('').map(c=>c.charCodeAt(0)));
+  const ct = new Uint8Array(atob(data.ct).split('').map(c=>c.charCodeAt(0)));
+  const dec = await crypto.subtle.decrypt({ name:'AES-GCM', iv }, key, ct);
+  const payload = JSON.parse(new TextDecoder().decode(dec));
+
+  if (payload.groq) {
+    S.openaiKey = payload.groq;
+    document.getElementById('gem-key').value = payload.groq;
+  }
+  if (payload.el) {
+    S.elKey = payload.el;
+    document.getElementById('el-key').value = payload.el;
+    loadItalianVoice(payload.el);
   }
 }
 
+async function bioSaveSilent() {
+  const groqKey = document.getElementById('gem-key').value.trim();
+  const elKey = document.getElementById('el-key').value.trim();
+  if (!groqKey) return;
+
+  if (window.PublicKeyCredential) {
+    try {
+      await navigator.credentials.get({
+        publicKey: {
+          challenge: crypto.getRandomValues(new Uint8Array(32)),
+          rpId: location.hostname || 'localhost',
+          userVerification: 'required',
+          timeout: 30000,
+        }
+      });
+    } catch(e) { /* fallback */ }
+  }
+
+  const salt = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
+  const key = await deriveKey(salt);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = await crypto.subtle.encrypt(
+    { name:'AES-GCM', iv }, key,
+    new TextEncoder().encode(JSON.stringify({ groq: groqKey, el: elKey }))
+  );
+  const data = {
+    salt,
+    iv: btoa(String.fromCharCode(...new Uint8Array(iv))),
+    ct: btoa(String.fromCharCode(...new Uint8Array(enc)))
+  };
+  localStorage.setItem(BIO_KEY, JSON.stringify(data));
+  // Aggiorna label pulsante per la prossima apertura
+  document.getElementById('start-btn-label').textContent = '🔑 Inizia con Passkey';
+  document.getElementById('manual-start-link').style.display = 'flex';
+}
+
 function bioClear() {
-  if (!confirm('Eliminare le chiavi salvate?')) return;
-  localStorage.removeItem(BIO_KEY);
-  document.getElementById('bio-load-block').style.display = 'none';
-  document.getElementById('bio-load-st').textContent = '';
+  // Ora gestito da bioClearInline
+  bioClearInline();
 }
 
 // Avvia controllo biometrico al caricamento
