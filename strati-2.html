@@ -11,16 +11,16 @@
   :root {
     --bg: #0c0b09;
     --paper: #13120e;
-    --gold: #c9a84c;
-    --gold-dim: #9a7d3a;
+    --gold: #ffffff;
+    --gold-dim: #cccccc;
     --text: #e0dbd0;
     --muted: #8a8278;
     --red: #c03030;
-    --fs-base: 1rem;        /* 16px */
-    --fs-sm: 0.875rem;      /* 14px */
-    --fs-xs: 0.75rem;       /* 12px */
-    --fs-lg: 1.125rem;      /* 18px */
-    --fs-xl: 1.375rem;      /* 22px */
+    --fs-base: 1.1rem;        /* 16px */
+    --fs-sm: 0.95rem;      /* 14px */
+    --fs-xs: 0.82rem;       /* 12px */
+    --fs-lg: 1.25rem;      /* 18px */
+    --fs-xl: 1.5rem;      /* 22px */
     --lh: 1.65;
   }
 
@@ -30,7 +30,7 @@
     background: var(--bg);
     color: var(--text);
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 16px;
+    font-size: 18px;
     min-height: 100dvh;
     overflow-x: hidden;
   }
@@ -95,7 +95,7 @@
   .key-inp {
     flex:1; background:#0a0a08; border:1px solid #2a2820;
     color:var(--text); font-family:'IBM Plex Mono',monospace;
-    font-size:16px; /* CRITICO: evita zoom iOS */
+    font-size:18px; /* CRITICO: evita zoom iOS */
     padding:0.75rem 0.9rem; outline:none; transition:border-color 0.3s;
     min-height:48px;
   }
@@ -1842,7 +1842,7 @@ function selectMode(mode) {
       _splashMap.on('click', e => {
         _splashPicked = e.latlng;
         if (_splashMarker) _splashMarker.setLatLng(e.latlng);
-        else _splashMarker = L.circleMarker(e.latlng, { radius: 7, color: '#c9a84c', fillColor: '#c9a84c', fillOpacity: 0.9 }).addTo(_splashMap);
+        else _splashMarker = L.circleMarker(e.latlng, { radius: 7, color: '#ffffff', fillColor: '#ffffff', fillOpacity: 0.9 }).addTo(_splashMap);
         document.getElementById('splash-map-chosen').textContent =
           _splashPicked.lat.toFixed(4) + '°N  ' + _splashPicked.lng.toFixed(4) + '°E';
         document.getElementById('splash-map-confirm').classList.add('on');
@@ -1881,7 +1881,7 @@ function openVmap() {
       _vmapMap.on('click', e => {
         _vmapPicked = e.latlng;
         if (_vmapMarker) _vmapMarker.setLatLng(e.latlng);
-        else _vmapMarker = L.circleMarker(e.latlng, { radius: 7, color: '#c9a84c', fillColor: '#c9a84c', fillOpacity: 0.9 }).addTo(_vmapMap);
+        else _vmapMarker = L.circleMarker(e.latlng, { radius: 7, color: '#ffffff', fillColor: '#ffffff', fillOpacity: 0.9 }).addTo(_vmapMap);
         document.getElementById('vmap-chosen').textContent =
           _vmapPicked.lat.toFixed(4) + '°N  ' + _vmapPicked.lng.toFixed(4) + '°E';
         document.getElementById('vmap-confirm').classList.add('on');
@@ -2166,7 +2166,7 @@ function initLeafletMap() {
 
   S.markerLayer = L.layerGroup().addTo(S.leafletMap);
   S.pathLine = L.polyline(S.pathCoords, {
-    color: '#c9a84c', weight: 2, opacity: 0.7, dashArray: '4 4'
+    color: '#ffffff', weight: 2, opacity: 0.7, dashArray: '4 4'
   }).addTo(S.leafletMap);
 
   // Aggiunge marker già esistenti
@@ -2184,11 +2184,11 @@ function addMapMarker(lat, lon, place, n) {
 
 function addLeafletMarker(map, lat, lon, place, n, silent) {
   const icon = L.divIcon({
-    html: `<div style="width:20px;height:20px;border-radius:50%;background:#0c0b09;border:1.5px solid #c9a84c;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:7px;color:#c9a84c;line-height:1;">${n}</div>`,
+    html: `<div style="width:20px;height:20px;border-radius:50%;background:#0c0b09;border:1.5px solid #ffffff;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:7px;color:#ffffff;line-height:1;">${n}</div>`,
     className: '', iconSize: [20,20], iconAnchor: [10,10]
   });
   const marker = L.marker([lat,lon], {icon}).addTo(S.markerLayer||map);
-  marker.bindPopup(`<span style="font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:#c9a84c;">${place||'—'}</span>`, {className:'strati-popup'});
+  marker.bindPopup(`<span style="font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:#ffffff;">${place||'—'}</span>`, {className:'strati-popup'});
   if (!silent) { map.panTo([lat,lon]); }
 }
 
@@ -2231,7 +2231,7 @@ function endSession() {
       S.leafletEndMap = L.map('end-map', {zoomControl:false, attributionControl:false})
         .fitBounds(S.pathCoords.length>1 ? S.pathCoords : [[S.pathCoords[0][0]-0.005, S.pathCoords[0][1]-0.005],[S.pathCoords[0][0]+0.005, S.pathCoords[0][1]+0.005]]);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(S.leafletEndMap);
-      L.polyline(S.pathCoords, {color:'#c9a84c',weight:2,opacity:0.7,dashArray:'4 4'}).addTo(S.leafletEndMap);
+      L.polyline(S.pathCoords, {color:'#ffffff',weight:2,opacity:0.7,dashArray:'4 4'}).addTo(S.leafletEndMap);
       [...S.history].reverse().forEach((h,i)=>{
         if (h.lat&&h.lon) addLeafletMarker(S.leafletEndMap,h.lat,h.lon,h.place,i+1,true);
       });
@@ -2273,7 +2273,7 @@ function exportDiary() {
 <title>STRATI — Diario del ${dateStr}</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#0c0b09; --paper:#13120e; --gold:#c9a84c; --gold-dim:#6b5a2a; --text:#d4cfc0; --muted:#5a5548; }
+  :root { --bg:#0c0b09; --paper:#13120e; --gold:#ffffff; --gold-dim:#cccccc; --text:#d4cfc0; --muted:#5a5548; }
   * { margin:0; padding:0; box-sizing:border-box; }
   body { background:var(--bg); color:var(--text); font-family:'IBM Plex Mono',monospace; padding:2rem 1.5rem 4rem; max-width:680px; margin:0 auto; }
   .cover { text-align:center; padding:4rem 0 3rem; border-bottom:1px solid #1e1c18; margin-bottom:3rem; }
