@@ -617,8 +617,17 @@
     Dall'antichità alla cronaca di ieri.
   </div>
 
-  <!-- chiave API integrata — placeholder per compatibilità bio -->
-  <div style="display:none"><input id="gem-key"><div id="gem-st"></div></div>
+  <!-- chiave API Groq — visibile solo al primo utilizzo -->
+  <div id="api-key-block" class="key-block" style="display:none;">
+    <span class="key-lbl">Groq API Key</span>
+    <div class="key-row">
+      <input class="key-inp" id="gem-key" type="password" placeholder="gsk_..." autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
+      <button class="key-btn" onclick="testAndSaveKey()">Verifica</button>
+    </div>
+    <div class="key-st req" id="gem-st">→ Gratuita su console.groq.com</div>
+  </div>
+  <!-- campo nascosto gem-key-hidden per retrocompatibilità bio -->
+  <div style="display:none"><input id="gem-key-hidden"></div>
 
   <div class="s-warning">
     Usa le cuffie · Cammina in luoghi sicuri<br>
@@ -640,6 +649,7 @@
     <div class="hdr-right">
       <span id="gps-indicator"><span class="gps-dot" id="gps-dot"></span><span id="gps-txt">attesa</span></span>
       <button class="virtual-badge" id="virtual-badge" onclick="openVmap()" style="display:none;">🗺 Cambia punto</button>
+      <button class="virtual-badge" id="refresh-pos-btn" onclick="refreshPosition()" title="Aggiorna posizione e genera narrazione" style="display:none;">↻ Aggiorna</button>
       <button id="mute-btn" onclick="toggleMute()" title="Silenzia narrazione">🔊</button>
     </div>
   </header>
@@ -856,7 +866,7 @@
 // STATO
 // ══════════════════════════════════════════════
 const S = {
-  openaiKey: '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',
+  openaiKey: '',
   gpsReady: false,
   lastPos: null,
   currentPos: null,
@@ -1918,12 +1928,65 @@ function confirmVmap() {
   generateFrag(lat, lon, 'virtual_move');
 }
 
-function startApp(virtual) {
+// ══════════════════════════════════════════════
+// AGGIORNA POSIZIONE
+// ══════════════════════════════════════════════
+function refreshPosition() {
+  const btn = document.getElementById('refresh-pos-btn');
+  if (!btn) return;
+  btn.textContent = '↻ ...';
+  btn.style.opacity = '0.5';
+  btn.style.pointerEvents = 'none';
+
+  const restore = () => {
+    btn.textContent = '↻ Aggiorna';
+    btn.style.opacity = '1';
+    btn.style.pointerEvents = 'auto';
+  };
+
+  if (S.virtualMode) {
+    // Modalità virtuale: apre il selettore mappa
+    restore();
+    openVmap();
+    return;
+  }
+
+  if (!navigator.geolocation) { restore(); return; }
+
+  navigator.geolocation.getCurrentPosition(pos => {
+    restore();
+    const { latitude: lat, longitude: lon } = pos.coords;
+    S.currentPos = { lat, lon };
+    S.pathCoords.push([lat, lon]);
+    if (S.leafletMap && S.pathLine) {
+      S.pathLine.setLatLngs(S.pathCoords);
+      S.leafletMap.panTo([lat, lon]);
+    }
+    fetchAddress(lat, lon).then(addr => {
+      if (addr) document.getElementById('addr-strip').textContent = addr;
+    });
+    // Forza nuovo frammento ignorando cooldown
+    S.lastFragTime = 0;
+    S.lastFragPos = null;
+    S.lastFragAt = S.totalDist - 999;
+    S.fragCount++;
+    document.getElementById('frag-n').textContent = S.fragCount;
+    generateFrag(lat, lon, 'manual_refresh');
+  }, () => {
+    restore();
+    document.getElementById('search-txt').textContent = 'Impossibile aggiornare la posizione';
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+}
   if (!S.openaiKey) {
     alert('Inserisci e verifica la Groq API Key prima di iniziare.'); return;
   }
   startSilentLoop();
   S.startTime = new Date();
+  // Mostra tasto aggiorna posizione
+  setTimeout(() => {
+    const refreshBtn = document.getElementById('refresh-pos-btn');
+    if (refreshBtn) refreshBtn.style.display = '';
+  }, 1500);
 
   if (virtual && S.virtualPos) {
     // Modalità virtuale: niente GPS reale
@@ -1985,23 +2048,115 @@ const BIO_KEY = 'strati_bio_v1';
 
 async function bioInit() {
   const saved = localStorage.getItem(BIO_KEY);
-  if (saved) {
+  const hasKey = await tryLoadKey();
+  
+  if (hasKey) {
+    // Chiave già salvata: nasconde il campo, mostra link dimentica
+    document.getElementById('api-key-block').style.display = 'none';
     document.getElementById('start-btn-label').textContent = '▶ Inizia a camminare';
     document.getElementById('manual-start-link').style.display = 'flex';
     document.getElementById('manual-start-link').style.gap = '0';
   } else {
+    // Primo utilizzo: mostra campo API key
+    document.getElementById('api-key-block').style.display = 'block';
     document.getElementById('start-btn-label').textContent = 'Inizia a camminare';
   }
 }
 
+// Tenta di caricare chiave salvata, ritorna true se trovata
+async function tryLoadKey() {
+  const saved = localStorage.getItem(BIO_KEY);
+  if (!saved) return false;
+  try {
+    const data = JSON.parse(saved);
+    const key = await deriveKey(data.salt);
+    const iv = new Uint8Array(atob(data.iv).split('').map(c=>c.charCodeAt(0)));
+    const ct = new Uint8Array(atob(data.ct).split('').map(c=>c.charCodeAt(0)));
+    const dec = await crypto.subtle.decrypt({ name:'AES-GCM', iv }, key, ct);
+    const payload = JSON.parse(new TextDecoder().decode(dec));
+    if (payload.groq) {
+      S.openaiKey = payload.groq;
+      document.getElementById('gem-key').value = payload.groq;
+      return true;
+    }
+    return false;
+  } catch(e) { return false; }
+}
+
+// Verifica e salva la chiave API inserita
+async function testAndSaveKey() {
+  const key = document.getElementById('gem-key').value.trim();
+  const st = document.getElementById('gem-st');
+  if (!key) { st.textContent='Inserisci una chiave'; st.className='key-st err'; return; }
+  st.textContent='Verifica...'; st.className='key-st';
+  try {
+    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 10,
+        messages:[{ role:'user', content:'Rispondi solo: OK' }]
+      })
+    });
+    if (r.ok) {
+      S.openaiKey = key;
+      st.textContent='✓ Chiave valida — salvata sull\'iPhone'; st.className='key-st ok';
+      // Salva cifrata in localStorage
+      await saveKeyToStorage(key);
+      // Aggiorna UI: nasconde campo, mostra link dimentica
+      setTimeout(() => {
+        document.getElementById('api-key-block').style.display = 'none';
+        document.getElementById('start-btn-label').textContent = '▶ Inizia a camminare';
+        document.getElementById('manual-start-link').style.display = 'flex';
+        document.getElementById('manual-start-link').style.gap = '0';
+      }, 1500);
+    } else {
+      const e = await r.json();
+      st.textContent='✗ ' + (e.error?.message || 'Chiave non valida'); st.className='key-st err';
+    }
+  } catch(e) { st.textContent='✗ Errore di rete'; st.className='key-st err'; }
+}
+
+// Salva chiave cifrata in localStorage
+async function saveKeyToStorage(groqKey) {
+  const salt = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
+  const key = await deriveKey(salt);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = await crypto.subtle.encrypt(
+    { name:'AES-GCM', iv }, key,
+    new TextEncoder().encode(JSON.stringify({ groq: groqKey }))
+  );
+  const data = {
+    salt,
+    iv: btoa(String.fromCharCode(...new Uint8Array(iv))),
+    ct: btoa(String.fromCharCode(...new Uint8Array(enc)))
+  };
+  localStorage.setItem(BIO_KEY, JSON.stringify(data));
+}
+
 // Pulsante unificato
 async function unifiedStart() {
+  // Carica chiave se non ancora in memoria
+  if (!S.openaiKey) {
+    await tryLoadKey();
+  }
+  
+  if (!S.openaiKey) {
+    // Mostra campo chiave se non ancora visibile
+    document.getElementById('api-key-block').style.display = 'block';
+    document.getElementById('gem-st').textContent = '← Inserisci la tua Groq API Key per continuare';
+    document.getElementById('gem-st').className = 'key-st req';
+    document.getElementById('gem-key').focus();
+    return;
+  }
+
   // Sblocca GPS immediatamente (sincrono)
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(p => { window._iosGps = p; }, ()=>{}, { enableHighAccuracy:true, timeout:20000, maximumAge:0 });
   }
 
-  // Chiavi già integrate — parte direttamente
+  // Parte direttamente
   setTimeout(() => startApp(), 200);
 }
 
@@ -2019,12 +2174,11 @@ function bioClearInline() {
   localStorage.removeItem(BIO_KEY);
   document.getElementById('manual-start-link').style.display = 'none';
   document.getElementById('start-btn-label').textContent = 'Inizia a camminare';
-  document.getElementById('unified-st').textContent = 'Chiavi eliminate';
-  document.getElementById('unified-st').className = 'key-st';
-  S.openaiKey = null;
+  document.getElementById('api-key-block').style.display = 'block';
   document.getElementById('gem-key').value = '';
-  document.getElementById('gem-st').textContent = '→ Ottienila gratis su console.groq.com';
+  document.getElementById('gem-st').textContent = '→ Gratuita su console.groq.com';
   document.getElementById('gem-st').className = 'key-st req';
+  S.openaiKey = '';
 }
 
 // Chiave AES derivata da un segreto fisso + fingerprint del dispositivo
@@ -2044,33 +2198,23 @@ async function bioSave() {
 }
 
 async function bioLoad() {
-  const saved = localStorage.getItem(BIO_KEY);
-  if (!saved) return;
-  try {
-    await bioLoadSilent();
-  } catch(e) {}
+  await tryLoadKey();
 }
 
 // Versione silenziosa (usata da unifiedStart)
 async function bioLoadSilent() {
-  const saved = localStorage.getItem(BIO_KEY);
-  if (!saved) return;
-
-  // Nessun WebAuthn — decifra direttamente con AES-GCM
-  const data = JSON.parse(saved);
-  const key = await deriveKey(data.salt);
-  const iv = new Uint8Array(atob(data.iv).split('').map(c=>c.charCodeAt(0)));
-  const ct = new Uint8Array(atob(data.ct).split('').map(c=>c.charCodeAt(0)));
-  const dec = await crypto.subtle.decrypt({ name:'AES-GCM', iv }, key, ct);
-  const payload = JSON.parse(new TextDecoder().decode(dec));
-
-  if (payload.groq) {
-    S.openaiKey = payload.groq;
-    document.getElementById('gem-key').value = payload.groq;
-  }
+  await tryLoadKey();
 }
 
 async function bioSaveSilent() {
+  const groqKey = document.getElementById('gem-key').value.trim();
+  if (!groqKey) return;
+  await saveKeyToStorage(groqKey);
+  document.getElementById('start-btn-label').textContent = '▶ Inizia a camminare';
+  document.getElementById('manual-start-link').style.display = 'flex';
+}
+
+async function bioSaveSilent_OLD() {
   const groqKey = document.getElementById('gem-key').value.trim();
   if (!groqKey) return;
 
