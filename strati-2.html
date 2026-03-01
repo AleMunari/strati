@@ -1977,6 +1977,8 @@ function refreshPosition() {
     document.getElementById('search-txt').textContent = 'Impossibile aggiornare la posizione';
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
 }
+
+function startApp(virtual) {
   if (!S.openaiKey) {
     alert('Inserisci e verifica la Groq API Key prima di iniziare.'); return;
   }
@@ -2023,9 +2025,8 @@ function refreshPosition() {
 
 setInterval(()=>document.getElementById('s-time').textContent=timeStr(),60000);
 
-// Lista voci disponibili al boot
+// Lista voci disponibili al boot — bioInit viene chiamata dal secondo DOMContentLoaded
 window.addEventListener('DOMContentLoaded', () => {
-  bioInit();
   const synth = window.speechSynthesis;
   // Le voci potrebbero non essere ancora caricate al DOMContentLoaded
   const tryList = () => {
@@ -2214,37 +2215,9 @@ async function bioSaveSilent() {
   document.getElementById('manual-start-link').style.display = 'flex';
 }
 
-async function bioSaveSilent_OLD() {
-  const groqKey = document.getElementById('gem-key').value.trim();
-  if (!groqKey) return;
-
-  const salt = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
-  const key = await deriveKey(salt);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const enc = await crypto.subtle.encrypt(
-    { name:'AES-GCM', iv }, key,
-    new TextEncoder().encode(JSON.stringify({ groq: groqKey }))
-  );
-  const data = {
-    salt,
-    iv: btoa(String.fromCharCode(...new Uint8Array(iv))),
-    ct: btoa(String.fromCharCode(...new Uint8Array(enc)))
-  };
-  localStorage.setItem(BIO_KEY, JSON.stringify(data));
-  document.getElementById('start-btn-label').textContent = '▶ Inizia a camminare';
-  document.getElementById('manual-start-link').style.display = 'flex';
-}
-
 function bioClear() {
-  // Ora gestito da bioClearInline
   bioClearInline();
 }
-
-// Avvia controllo biometrico al caricamento
-window.addEventListener('DOMContentLoaded', () => {
-  bioInit();
-  checkGpsPermission();
-});
 
 function checkGpsPermission() {
   if (!navigator.permissions) return;
@@ -2258,6 +2231,12 @@ function checkGpsPermission() {
     };
   }).catch(() => {});
 }
+
+// Avvia tutto quando il DOM è pronto
+window.addEventListener('DOMContentLoaded', () => {
+  bioInit();
+  checkGpsPermission();
+});
 // ══════════════════════════════════════════════
 function saveCache(key, data) {
   try {
